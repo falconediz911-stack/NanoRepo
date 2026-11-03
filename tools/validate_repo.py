@@ -29,6 +29,7 @@ REQUIRED_FILES = (
     "docs/templates/notify-nanorepo.yml",
     "config/source-registry.json",
     "tools/validate_source_event.py",
+    "tests/test_source_registry.py",
     ".github/workflows/build-pacman.yml",
     ".github/workflows/source-events.yml",
     "packaging/profiles/znver5/makepkg.conf.example",
