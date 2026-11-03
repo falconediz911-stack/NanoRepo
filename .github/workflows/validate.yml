@@ -1,0 +1,32 @@
+name: Validate NanoRepo
+
+on:
+  push:
+    branches:
+      - main
+      - "repo-extreme-ultra-pro/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nanorepo-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-validation:
+    name: Static repository validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Validate repository structure and PKGBUILDs
+        run: python tools/validate_repo.py
