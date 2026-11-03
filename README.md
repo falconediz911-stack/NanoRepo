@@ -2,7 +2,7 @@
 
 The official package-source and repository-infrastructure project for **NanoOS**.
 
-> **Current status:** Source-to-package automation is in place on the `reponanoult` branch. No production Pacman endpoint, package-signing key, or distributable NanoOS PKGBUILDs have been activated yet. Do not add the proposed repository URL to a daily-use system yet.
+> **Current status:** The first Stable-channel package recipe, `nanoos-cpu-info` 0.1.0-1, is under review and will be built in pull request CI. No production Pacman endpoint, package-signing key, or client-ready repository has been activated. Do not add the proposed repository URL to a daily-use system yet.
 
 ## Update architecture
 
@@ -25,15 +25,16 @@ The Zen 5 channel is separate because packages built with `-march=znver5` may co
 
 ## Current components
 
-- Read-only CPU capability inspector: `components/nanoos-cpu-info/`
+- Read-only CPU capability inspector and first package candidate: `components/nanoos-cpu-info/`
+- Stable-channel PKGBUILD: `packages/stable/nanoos-cpu-info/PKGBUILD`
 - CPU Engine design and EPP-based profile plan
 - Stable, Testing, and Zen 5 channel policies
 - Source-repository allowlist and dispatch validator
-- Arch-container package-build workflow
+- Arch-container package-build workflow with pull request artifact builds
 - Conditional signed publishing workflow for Cloudflare R2
-- Separate ISO release metadata workflow templates
+- Separate ISO release metadata workflow integrations
 
-A component is not installable through Pacman until it has a reviewed PKGBUILD, versioned source, dependencies, install paths, license metadata, tests, signing, and a published repository database.
+A component is not ready for end-user installation until its PKGBUILD, pinned source, dependencies, install paths, license metadata, tests, signatures, and published repository database have been verified.
 
 ## Hosting and activation
 
@@ -57,10 +58,10 @@ tools/                   Repository and source-event validation
 
 ## Current limitations
 
-- There are currently no PKGBUILD recipes, so the build workflow has nothing to publish.
+- The first PKGBUILD is a review candidate; pull request CI must successfully build its archive before merge.
 - External app repositories must be registered in `config/source-registry.json` and use the documented dispatch template.
 - Cloudflare R2 bucket, public domain, and GitHub Actions secrets still need to be configured.
-- The ISO release event and website feed workflows are on their review branches until merged.
+- The ISO release hooks are merged into their repositories but have not yet been exercised by a published ISO release.
 - NanoOS Update must be updated to read `iso-latest.json`.
 
 See [docs/ACTIVATE-CONNECTIONS.md](docs/ACTIVATE-CONNECTIONS.md) for the exact GitHub Actions secrets, R2 setup, and activation checklist. See [docs/ROADMAP.md](docs/ROADMAP.md) for the remaining work.
