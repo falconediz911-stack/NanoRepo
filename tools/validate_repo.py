@@ -2,11 +2,12 @@
 """Static validation for the NanoRepo source repository.
 
 This tool does not execute PKGBUILDs. It checks repository structure,
-basic package metadata declarations, and rejects host-specific -march=native.
+package metadata declarations, channel naming, and source-event registration.
 """
 
 from __future__ import annotations
 
+import json
 import pathlib
 import re
 import subprocess
@@ -22,12 +23,59 @@ REQUIRED_FILES = (
     "docs/ZEN5-BUILD-PROFILE.md",
     "docs/CPU-ENGINE.md",
     "docs/ROADMAP.md",
+    "docs/SOURCE-CONNECTIONS.md",
+    "docs/R2-HOSTING.md",
+    "docs/PACMAN-CLIENT-CONFIG.md",
+    "docs/templates/notify-nanorepo.yml",
+    "config/source-registry.json",
+    "tools/validate_source_event.py",
+    ".github/workflows/build-pacman.yml",
+    ".github/workflows/source-events.yml",
     "packaging/profiles/znver5/makepkg.conf.example",
 )
+
 
 def fail(message: str) -> None:
     print(f"ERROR: {message}")
     raise SystemExit(1)
+
+
+def validate_registry() -> None:
+    path = ROOT / "config/source-registry.json"
+    try:
+        registry = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"source registry is invalid: {exc}")
+
+    if registry.get("schema_version") != 1:
+        fail("source registry schema_version must be 1")
+    sources = registry.get("sources")
+    if not isinstance(sources, dict) or not sources:
+        fail("source registry must contain a non-empty sources object")
+
+    required_sources = {
+        "falconediz911-stack/NanoRepo",
+        "falconediz911-stack/NanoOS-Beta21-ISO",
+        "falconediz911-stack/nanoos-website",
+    }
+    missing = required_sources.difference(sources)
+    if missing:
+        fail(f"source registry is missing required sources: {sorted(missing)}")
+
+    for repository, source in sources.items():
+        if "/" not in repository or not isinstance(source, dict):
+            fail(f"invalid source registry entry: {repository}")
+        if not isinstance(source.get("events"), list):
+            fail(f"{repository} must declare an events list")
+        if not isinstance(source.get("packages"), list):
+            fail(f"{repository} must declare a packages list")
+        if not isinstance(source.get("package_builds"), bool):
+            fail(f"{repository} must declare package_builds as a boolean")
+        if not source["package_builds"] and source["packages"]:
+            fail(f"metadata-only source {repository} cannot list package builds")
+
+    print(f"OK: {len(sources)} registered source repositories")
+
 
 def main() -> int:
     print("NanoRepo static validation")
@@ -38,6 +86,8 @@ def main() -> int:
         if not path.is_file() or path.stat().st_size == 0:
             fail(f"required file missing or empty: {relative}")
         print(f"OK: {relative}")
+
+    validate_registry()
 
     for channel in CHANNELS:
         for relative in (f"channels/{channel}/README.md",
@@ -90,6 +140,7 @@ def main() -> int:
     print(f"PASS: {len(pkgbuilds)} PKGBUILD(s) checked.")
     print("PASS: repository foundation is structurally valid.")
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
