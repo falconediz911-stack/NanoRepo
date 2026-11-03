@@ -1,0 +1,82 @@
+name: Validate incoming NanoOS source events
+
+on:
+  repository_dispatch:
+    types:
+      - nanoos.iso.published
+      - nanoos.website.feed.updated
+  workflow_dispatch:
+    inputs:
+      event_type:
+        description: Registered metadata event type
+        required: true
+        type: choice
+        options:
+          - nanoos.iso.published
+          - nanoos.website.feed.updated
+      source_repo:
+        description: Exact registered GitHub repository owner/name
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate-event:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out NanoRepo
+        uses: actions/checkout@v4
+
+      - name: Validate registered metadata source
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TYPE: ${{ github.event.action }}
+          DISPATCH_SOURCE: ${{ github.event.client_payload.source_repo }}
+          MANUAL_TYPE: ${{ inputs.event_type }}
+          MANUAL_SOURCE: ${{ inputs.source_repo }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "repository_dispatch" ]]; then
+            event_type="$DISPATCH_TYPE"
+            source_repo="$DISPATCH_SOURCE"
+          else
+            event_type="$MANUAL_TYPE"
+            source_repo="$MANUAL_SOURCE"
+          fi
+          python tools/validate_source_event.py \
+            --event-type "$event_type" \
+            --source-repo "$source_repo"
+
+      - name: Record event metadata
+        if: github.event_name == 'repository_dispatch'
+        env:
+          EVENT_TYPE: ${{ github.event.action }}
+          SOURCE_REPO: ${{ github.event.client_payload.source_repo }}
+          RELEASE_TAG: ${{ github.event.client_payload.release_tag }}
+          RELEASE_URL: ${{ github.event.client_payload.release_url }}
+          RELEASE_NAME: ${{ github.event.client_payload.release_name }}
+          PUBLISHED_AT: ${{ github.event.client_payload.published_at }}
+        run: |
+          set -euo pipefail
+          mkdir -p event-record
+          python - <<'PY'
+          import json, os
+          keys = ("EVENT_TYPE", "SOURCE_REPO", "RELEASE_TAG", "RELEASE_URL",
+                  "RELEASE_NAME", "PUBLISHED_AT")
+          event = {key.lower(): os.environ.get(key, "") for key in keys}
+          with open("event-record/source-event.json", "w", encoding="utf-8") as f:
+              json.dump(event, f, indent=2)
+              f.write("\n")
+          print(json.dumps(event, indent=2))
+          PY
+
+      - name: Upload event record
+        if: github.event_name == 'repository_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanoos-source-event
+          path: event-record/source-event.json
+          if-no-files-found: error
+          retention-days: 30
