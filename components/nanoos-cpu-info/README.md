@@ -21,4 +21,6 @@ python nanoos_cpu_info.py
 python nanoos_cpu_info.py --json
 ```
 
-This component is not yet packaged as a PKGBUILD. Package metadata will be added after source layout and install paths are reviewed.
+## License and packaging
+
+This component is licensed under the MIT License. The Stable-channel package candidate is `packages/stable/nanoos-cpu-info/PKGBUILD`. It installs the command as `/usr/bin/nanoos-cpu-info` and uses a source snapshot pinned to a NanoRepo commit with a recorded SHA-256 checksum.
