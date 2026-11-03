@@ -7,8 +7,11 @@
 - [x] Add Zen 5 build-profile example
 - [x] Add CPU Engine design specification
 - [x] Add static repository validation and CI
+- [x] Create `reponanoult` working branch
+- [x] Add read-only CPU capability discovery prototype
+- [x] Add CPU discovery unit tests to CI
 - [ ] Audit existing NanoOS app and kernel source trees
-- [ ] Add the first reviewed PKGBUILDs
+- [ ] Add reviewed PKGBUILDs
 
 ## Phase 2 — Package set
 - [ ] nanoos-release and base meta-package
@@ -19,9 +22,10 @@
 - [ ] nan package
 - [ ] NanoOS Gaming kernel package and matching headers
 - [ ] Hardware profiles and gaming presets
+- [ ] Package the read-only CPU discovery utility
 
 ## Phase 3 — CPU Engine and Zen 5
-- [ ] Read-only hardware and sysfs capability detection
+- [x] Read-only hardware and sysfs capability discovery prototype
 - [ ] CPU profile policy and dry-run
 - [ ] Reversible profile application and restore
 - [ ] Telemetry and benchmark utilities
