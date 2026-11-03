@@ -18,19 +18,40 @@ ALLOWED_EVENT_TYPES = {
 }
 
 
-def fail(message: str) -> None:
-    print(f"ERROR: {message}", file=sys.stderr)
-    raise SystemExit(1)
-
-
 def load_registry() -> dict[str, Any]:
     try:
         data = json.loads(REGISTRY.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        fail(f"cannot load source registry: {exc}")
+        raise ValueError(f"cannot load source registry: {exc}") from exc
     if data.get("schema_version") != 1 or not isinstance(data.get("sources"), dict):
-        fail("unsupported or malformed source registry")
+        raise ValueError("unsupported or malformed source registry")
     return data["sources"]
+
+
+def validate_event(event_type: str, source_repo: str, package_name: str | None = None) -> str:
+    if event_type not in ALLOWED_EVENT_TYPES:
+        raise ValueError(f"unsupported event type: {event_type}")
+
+    sources = load_registry()
+    source = sources.get(source_repo)
+    if source is None:
+        raise ValueError(f"source repository is not registered: {source_repo}")
+
+    if event_type not in source.get("events", []):
+        raise ValueError(f"{source_repo} is not allowed to send {event_type}")
+
+    if event_type == "nanoos.tool.source.updated":
+        if not source.get("package_builds", False):
+            raise ValueError(f"{source_repo} is not registered as a package source")
+        if not package_name:
+            raise ValueError("tool update events must include a package name")
+        if package_name not in source.get("packages", []):
+            raise ValueError(f"package is not registered for {source_repo}: {package_name}")
+        return f"ACCEPTED: {source_repo} updated registered package {package_name}"
+
+    if source.get("package_builds", False):
+        raise ValueError("metadata event unexpectedly targets a package-building source")
+    return f"ACCEPTED: metadata-only event {event_type} from {source_repo}"
 
 
 def main() -> int:
@@ -40,32 +61,17 @@ def main() -> int:
     parser.add_argument("--package-name")
     args = parser.parse_args()
 
-    if args.event_type not in ALLOWED_EVENT_TYPES:
-        fail(f"unsupported event type: {args.event_type}")
+    try:
+        result = validate_event(args.event_type, args.source_repo, args.package_name)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
 
-    sources = load_registry()
-    source = sources.get(args.source_repo)
-    if source is None:
-        fail(f"source repository is not registered: {args.source_repo}")
-
-    if args.event_type not in source.get("events", []):
-        fail(f"{args.source_repo} is not allowed to send {args.event_type}")
-
+    print(result)
     if args.event_type == "nanoos.tool.source.updated":
-        if not source.get("package_builds", False):
-            fail(f"{args.source_repo} is not registered as a package source")
-        if not args.package_name:
-            fail("tool update events must include --package-name")
-        if args.package_name not in source.get("packages", []):
-            fail(f"package is not registered for {args.source_repo}: {args.package_name}")
-        print(f"ACCEPTED: {args.source_repo} updated registered package {args.package_name}")
         print("The package build workflow may now look for its matching PKGBUILD.")
     else:
-        if source.get("package_builds", False):
-            fail("metadata event unexpectedly targets a package-building source")
-        print(f"ACCEPTED: metadata-only event {args.event_type} from {args.source_repo}")
         print("This event does not trigger Pacman package builds.")
-
     return 0
 
 
