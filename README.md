@@ -2,54 +2,65 @@
 
 The official package-source and repository-infrastructure project for **NanoOS**.
 
-> **Current status:** Foundation branch. Repository channels, package recipes, signing keys, and public package endpoints are not yet production-ready. Do not add this repository to a daily-use system yet.
+> **Current status:** Source-to-package automation is in place on the `reponanoult` branch. No production Pacman endpoint, package-signing key, or distributable NanoOS PKGBUILDs have been activated yet. Do not add the proposed repository URL to a daily-use system yet.
 
-## Repository goals
+## Update architecture
 
-- Maintain a compatible generic `x86_64` package baseline.
-- Separate stable, testing, and opt-in Zen 5 optimized package tracks.
-- Package NanoOS system components using standard Arch `PKGBUILD` recipes.
-- Build packages in clean, controlled environments.
-- Validate package metadata and build scripts before release.
-- Sign packages and repository databases before publication.
-- Keep build recipes, release artifacts, and private signing material separate.
+NanoOS updates are split into two separate paths:
 
-## Planned package channels
+1. **Apps and system tools → Pacman.** A change in a registered source repository triggers NanoRepo. NanoRepo validates the source event, builds the matching Arch package from its PKGBUILD in a disposable Arch container, signs the package and channel database, and publishes to the configured package host. Clients then use `pacman -Syu`.
+2. **ISO releases → NanoOS Update metadata.** Publishing an ISO release sends a separate event to the NanoOS website, which updates `public/releases/iso-latest.json`. An ISO is not a Pacman package. The NanoOS Update client still needs to consume this separate feed.
 
-| Channel | Intended audience | Compatibility |
+See [docs/SOURCE-CONNECTIONS.md](docs/SOURCE-CONNECTIONS.md).
+
+## Pacman channels
+
+| Pacman repository | Audience | Compatibility |
 |---|---|---|
 | `nanoos` | Normal NanoOS installations | Generic x86_64 baseline |
 | `nanoos-testing` | Preview and candidate builds | Generic x86_64 baseline |
-| `nanoos-znver5` | Explicit opt-in optimized builds | AMD Zen 5 only |
+| `nanoos-znver5` | Explicit opt-in optimized packages | AMD Zen 5 only |
 
-The Zen 5 channel is intentionally separate. A package built with `-march=znver5` may contain instructions unavailable on older CPUs. Pacman does not select packages by CPU capability automatically; users must opt in deliberately and the repository must document this compatibility boundary.
+The Zen 5 channel is separate because packages built with `-march=znver5` may contain instructions unavailable on older CPUs. Pacman does not choose packages based on CPU capability automatically.
 
-## Planned components
+## Current components
 
-- NanoOS release metadata and meta-packages
-- NanoOS GameMode, Welcome, Update, Installer tools, and `nan`
-- NanoOS Gaming kernel packaging and related presets
-- CPU profile engine using supported Linux CPU-frequency interfaces
-- Hardware detection, telemetry, and benchmark utilities
-- Build validation, clean-chroot packaging, signing, and release automation
+- Read-only CPU capability inspector: `components/nanoos-cpu-info/`
+- CPU Engine design and EPP-based profile plan
+- Stable, Testing, and Zen 5 channel policies
+- Source-repository allowlist and dispatch validator
+- Arch-container package-build workflow
+- Conditional signed publishing workflow for Cloudflare R2
+- Separate ISO release metadata workflow templates
 
-Package names and recipes will be added only after their real source trees, dependencies, install paths, and licensing are audited.
+A component is not installable through Pacman until it has a reviewed PKGBUILD, versioned source, dependencies, install paths, license metadata, tests, signing, and a published repository database.
+
+## Hosting and activation
+
+GitHub stores source code, PKGBUILDs, workflows, and release history. The binary Pacman repository is designed for Cloudflare R2 behind a public HTTPS custom domain.
+
+The proposed client URL is documented in [docs/PACMAN-CLIENT-CONFIG.md](docs/PACMAN-CLIENT-CONFIG.md), but it is **not live yet**. Publishing remains disabled until the R2 and signing secrets are configured. See [docs/R2-HOSTING.md](docs/R2-HOSTING.md).
 
 ## Layout
 
 ```text
-.github/workflows/       CI validation
-channels/                Channel policies and publication layout
-docs/                    Architecture, security, build, and tuning docs
-packaging/               PKGBUILD conventions and build profiles
-packages/                Channel-specific package sources
-tools/                   Repository validation and maintenance tools
+.github/workflows/       CI, package build/publish, source event receivers
+channels/                Stable, Testing, and Zen 5 channel policies
+components/              NanoOS source components
+config/                  Registered source repository allowlist
+docs/                    Architecture, security, hosting, and integration docs
+packages/                Channel-specific PKGBUILD sources
+packaging/               PKGBUILD conventions and compiler profiles
+tests/                   Unit tests
+tools/                   Repository and source-event validation
 ```
 
-## Development status
+## Current limitations
 
-See [docs/REPOSITORY-ARCHITECTURE.md](docs/REPOSITORY-ARCHITECTURE.md), [docs/BUILD-AND-RELEASE.md](docs/BUILD-AND-RELEASE.md), and [docs/ROADMAP.md](docs/ROADMAP.md).
+- There are currently no PKGBUILD recipes, so the build workflow has nothing to publish.
+- External app repositories must be registered in `config/source-registry.json` and use the documented dispatch template.
+- Cloudflare R2 bucket, public domain, and GitHub Actions secrets still need to be configured.
+- The ISO release event and website feed workflows are on their review branches until merged.
+- NanoOS Update must be updated to read `iso-latest.json`.
 
-## Important
-
-This Git repository stores source recipes and release infrastructure. The actual Pacman package repositories will be generated from validated package artifacts and published to a separately configured HTTPS endpoint. No endpoint or signing key is assumed in this foundation.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the remaining work.
