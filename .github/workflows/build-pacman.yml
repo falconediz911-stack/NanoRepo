@@ -1,0 +1,225 @@
+name: Build and publish NanoRepo Pacman packages
+
+on:
+  push:
+    branches:
+      - main
+      - reponanoult
+    paths:
+      - "packages/**"
+      - "components/**"
+      - "packaging/**"
+      - "tools/validate_repo.py"
+      - "tools/validate_source_event.py"
+      - "config/source-registry.json"
+      - ".github/workflows/build-pacman.yml"
+  repository_dispatch:
+    types: [nanoos.tool.source.updated]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nanorepo-packages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build packages in a disposable Arch container
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    outputs:
+      has_packages: ${{ steps.build.outputs.has_packages }}
+    steps:
+      - name: Check out NanoRepo
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          pacman -Syu --noconfirm --needed git sudo pacman-contrib aws-cli gnupg
+
+      - name: Validate incoming external source event
+        if: github.event_name == 'repository_dispatch'
+        env:
+          EVENT_TYPE: ${{ github.event.action }}
+          SOURCE_REPO: ${{ github.event.client_payload.source_repo }}
+          PACKAGE_NAME: ${{ github.event.client_payload.package_name }}
+        run: |
+          set -euo pipefail
+          python tools/validate_source_event.py \
+            --event-type "$EVENT_TYPE" \
+            --source-repo "$SOURCE_REPO" \
+            --package-name "$PACKAGE_NAME"
+
+      - name: Build registered PKGBUILDs
+        id: build
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PACKAGE: ${{ github.event.client_payload.package_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          declare -a recipes=()
+          for channel in stable testing znver5; do
+            for recipe in "$GITHUB_WORKSPACE/packages/$channel"/*/PKGBUILD; do
+              [[ -f "$recipe" ]] && recipes+=("$recipe")
+            done
+          done
+
+          if (( ${#recipes[@]} == 0 )); then
+            echo "has_packages=false" >> "$GITHUB_OUTPUT"
+            echo "No PKGBUILDs exist yet. Source event was accepted, but no package can be built."
+            exit 0
+          fi
+
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          useradd --create-home --shell /bin/bash nanobuild
+          printf 'nanobuild ALL=(ALL) NOPASSWD: /usr/bin/pacman\n' > /etc/sudoers.d/nanobuild
+          chmod 0440 /etc/sudoers.d/nanobuild
+
+          # The Zen 5 profile is applied only to packages under packages/znver5/.
+          cp /etc/makepkg.conf "$GITHUB_WORKSPACE/dist/makepkg-znver5.conf"
+          cat >> "$GITHUB_WORKSPACE/dist/makepkg-znver5.conf" <<'CONF'
+          CFLAGS="-O2 -pipe -march=znver5"
+          CXXFLAGS="${CFLAGS}"
+          CONF
+
+          chown -R nanobuild:nanobuild "$GITHUB_WORKSPACE"
+
+          built=0
+          for recipe in "${recipes[@]}"; do
+            package_dir="${recipe%/PKGBUILD}"
+            package_name="${package_dir##*/}"
+            channel="${package_dir#"$GITHUB_WORKSPACE/packages/"}"
+            channel="${channel%%/*}"
+
+            if [[ "$EVENT_NAME" == "repository_dispatch" && "$package_name" != "$EVENT_PACKAGE" ]]; then
+              continue
+            fi
+
+            output_dir="$GITHUB_WORKSPACE/dist/$channel/x86_64"
+            source_dir="$GITHUB_WORKSPACE/.makepkg-sources"
+            mkdir -p "$output_dir" "$source_dir"
+            chown -R nanobuild:nanobuild "$output_dir" "$source_dir"
+
+            config=/etc/makepkg.conf
+            if [[ "$channel" == "znver5" ]]; then
+              config="$GITHUB_WORKSPACE/dist/makepkg-znver5.conf"
+            fi
+
+            echo "Building $package_name in channel $channel"
+            runuser -u nanobuild -- env \
+              PKGDEST="$output_dir" \
+              SRCDEST="$source_dir" \
+              MAKEPKG_CONF="$config" \
+              bash -lc "cd '$package_dir' && makepkg --cleanbuild --syncdeps --noconfirm --log"
+
+            built=$((built + 1))
+          done
+
+          if (( built == 0 )); then
+            echo "has_packages=false" >> "$GITHUB_OUTPUT"
+            echo "The dispatched package has no matching PKGBUILD."
+            exit 0
+          fi
+
+          echo "has_packages=true" >> "$GITHUB_OUTPUT"
+          find "$GITHUB_WORKSPACE/dist" -type f -maxdepth 5 -print
+
+      - name: Upload built package archives
+        if: steps.build.outputs.has_packages == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanorepo-package-archives
+          path: dist/*/x86_64/*.pkg.tar.zst
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanorepo-build-logs
+          path: packages/**/pkg/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Publish signed Pacman repositories to Cloudflare R2
+        if: github.ref == 'refs/heads/main' && steps.build.outputs.has_packages == 'true'
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          NANOREPO_GPG_PRIVATE_KEY_B64: ${{ secrets.NANOREPO_GPG_PRIVATE_KEY_B64 }}
+          NANOREPO_GPG_KEY_ID: ${{ secrets.NANOREPO_GPG_KEY_ID }}
+          NANOREPO_GPG_PASSPHRASE: ${{ secrets.NANOREPO_GPG_PASSPHRASE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          missing=()
+          for name in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET \
+                      NANOREPO_GPG_PRIVATE_KEY_B64 NANOREPO_GPG_KEY_ID NANOREPO_GPG_PASSPHRASE; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::notice::Build succeeded, but publishing is disabled. Missing repository secrets: ${missing[*]}"
+            exit 0
+          fi
+
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+          export AWS_DEFAULT_REGION=auto
+          export GNUPGHOME="$RUNNER_TEMP/nanorepo-gnupg"
+          mkdir -p "$GNUPGHOME"
+          chmod 700 "$GNUPGHOME"
+
+          printf '%s' "$NANOREPO_GPG_PRIVATE_KEY_B64" | base64 -d > "$RUNNER_TEMP/nanorepo-signing-key.asc"
+          gpg --batch --import "$RUNNER_TEMP/nanorepo-signing-key.asc"
+          printf '%s' "$NANOREPO_GPG_PASSPHRASE" > "$GNUPGHOME/passphrase"
+          chmod 600 "$GNUPGHOME/passphrase"
+
+          # repo-add invokes gpg itself. This wrapper supplies the passphrase
+          # through a protected file without placing it in process arguments.
+          mkdir -p "$RUNNER_TEMP/nanorepo-gpg-bin"
+          cat > "$RUNNER_TEMP/nanorepo-gpg-bin/gpg" <<'GPGWRAPPER'
+          #!/bin/sh
+          exec /usr/bin/gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-file "$GNUPGHOME/passphrase" "$@"
+          GPGWRAPPER
+          chmod 700 "$RUNNER_TEMP/nanorepo-gpg-bin/gpg"
+          export PATH="$RUNNER_TEMP/nanorepo-gpg-bin:$PATH"
+
+          declare -A database_names=(
+            [stable]="nanoos"
+            [testing]="nanoos-testing"
+            [znver5]="nanoos-znver5"
+          )
+
+          for channel in stable testing znver5; do
+            directory="$GITHUB_WORKSPACE/dist/$channel/x86_64"
+            [[ -d "$directory" ]] || continue
+            shopt -s nullglob
+            packages=("$directory"/*.pkg.tar.zst)
+            (( ${#packages[@]} > 0 )) || continue
+
+            for package in "${packages[@]}"; do
+              gpg --local-user "$NANOREPO_GPG_KEY_ID" \
+                --detach-sign --output "$package.sig" "$package"
+            done
+
+            database="${database_names[$channel]}"
+            repo-add --sign --key "$NANOREPO_GPG_KEY_ID" --include-sigs \
+              "$directory/$database.db.tar.zst" "${packages[@]}"
+
+            aws s3 sync "$directory/" "s3://$R2_BUCKET/$channel/x86_64/" \
+              --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" \
+              --no-progress
+          done
+
+          echo "::notice::Signed NanoRepo channel files uploaded. Existing older package objects were not deleted."
