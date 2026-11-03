@@ -1,0 +1,9 @@
+# NanoOS dedicated Zen 5 build profile example.
+# Use only inside an isolated Zen 5 package build environment.
+# Do NOT install this as a global makepkg.conf on generic systems.
+
+CFLAGS="-O2 -pipe -march=znver5"
+CXXFLAGS="${CFLAGS}"
+
+# Keep LTO, fast-math, and other aggressive transformations disabled
+# until each package has specific correctness and performance evidence.
