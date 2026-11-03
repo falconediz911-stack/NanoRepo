@@ -63,4 +63,4 @@ tools/                   Repository and source-event validation
 - The ISO release event and website feed workflows are on their review branches until merged.
 - NanoOS Update must be updated to read `iso-latest.json`.
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the remaining work.
+See [docs/ACTIVATE-CONNECTIONS.md](docs/ACTIVATE-CONNECTIONS.md) for the exact GitHub Actions secrets, R2 setup, and activation checklist. See [docs/ROADMAP.md](docs/ROADMAP.md) for the remaining work.
