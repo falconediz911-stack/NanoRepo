@@ -1,2 +1,66 @@
-# NanoRepo
-repository for NanoOS
+# NanoOS Repo Extreme Ultra Pro
+
+The official package-source and repository-infrastructure project for **NanoOS**.
+
+> **Current status:** Source-to-package automation is in place on the `reponanoult` branch. No production Pacman endpoint, package-signing key, or distributable NanoOS PKGBUILDs have been activated yet. Do not add the proposed repository URL to a daily-use system yet.
+
+## Update architecture
+
+NanoOS updates are split into two separate paths:
+
+1. **Apps and system tools → Pacman.** A change in a registered source repository triggers NanoRepo. NanoRepo validates the source event, builds the matching Arch package from its PKGBUILD in a disposable Arch container, signs the package and channel database, and publishes to the configured package host. Clients then use `pacman -Syu`.
+2. **ISO releases → NanoOS Update metadata.** Publishing an ISO release sends a separate event to the NanoOS website, which updates `public/releases/iso-latest.json`. An ISO is not a Pacman package. The NanoOS Update client still needs to consume this separate feed.
+
+See [docs/SOURCE-CONNECTIONS.md](docs/SOURCE-CONNECTIONS.md).
+
+## Pacman channels
+
+| Pacman repository | Audience | Compatibility |
+|---|---|---|
+| `nanoos` | Normal NanoOS installations | Generic x86_64 baseline |
+| `nanoos-testing` | Preview and candidate builds | Generic x86_64 baseline |
+| `nanoos-znver5` | Explicit opt-in optimized packages | AMD Zen 5 only |
+
+The Zen 5 channel is separate because packages built with `-march=znver5` may contain instructions unavailable on older CPUs. Pacman does not choose packages based on CPU capability automatically.
+
+## Current components
+
+- Read-only CPU capability inspector: `components/nanoos-cpu-info/`
+- CPU Engine design and EPP-based profile plan
+- Stable, Testing, and Zen 5 channel policies
+- Source-repository allowlist and dispatch validator
+- Arch-container package-build workflow
+- Conditional signed publishing workflow for Cloudflare R2
+- Separate ISO release metadata workflow templates
+
+A component is not installable through Pacman until it has a reviewed PKGBUILD, versioned source, dependencies, install paths, license metadata, tests, signing, and a published repository database.
+
+## Hosting and activation
+
+GitHub stores source code, PKGBUILDs, workflows, and release history. The binary Pacman repository is designed for Cloudflare R2 behind a public HTTPS custom domain.
+
+The proposed client URL is documented in [docs/PACMAN-CLIENT-CONFIG.md](docs/PACMAN-CLIENT-CONFIG.md), but it is **not live yet**. Publishing remains disabled until the R2 and signing secrets are configured. See [docs/R2-HOSTING.md](docs/R2-HOSTING.md).
+
+## Layout
+
+```text
+.github/workflows/       CI, package build/publish, source event receivers
+channels/                Stable, Testing, and Zen 5 channel policies
+components/              NanoOS source components
+config/                  Registered source repository allowlist
+docs/                    Architecture, security, hosting, and integration docs
+packages/                Channel-specific PKGBUILD sources
+packaging/               PKGBUILD conventions and compiler profiles
+tests/                   Unit tests
+tools/                   Repository and source-event validation
+```
+
+## Current limitations
+
+- There are currently no PKGBUILD recipes, so the build workflow has nothing to publish.
+- External app repositories must be registered in `config/source-registry.json` and use the documented dispatch template.
+- Cloudflare R2 bucket, public domain, and GitHub Actions secrets still need to be configured.
+- The ISO release event and website feed workflows are on their review branches until merged.
+- NanoOS Update must be updated to read `iso-latest.json`.
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the remaining work.

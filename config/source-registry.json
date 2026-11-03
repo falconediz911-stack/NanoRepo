@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "sources": {
+    "falconediz911-stack/NanoRepo": {
+      "role": "first-party-components-and-package-recipes",
+      "events": ["nanoos.tool.source.updated"],
+      "packages": ["nanoos-cpu-info"],
+      "package_builds": true
+    },
+    "falconediz911-stack/NanoOS-Beta21-ISO": {
+      "role": "iso-release-metadata-only",
+      "events": ["nanoos.iso.published"],
+      "packages": [],
+      "package_builds": false
+    },
+    "falconediz911-stack/nanoos-website": {
+      "role": "website-release-metadata-only",
+      "events": ["nanoos.website.feed.updated"],
+      "packages": [],
+      "package_builds": false
+    }
+  }
+}

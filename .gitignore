@@ -1,0 +1,19 @@
+# Arch package build output
+*.pkg.tar.*
+*.src.tar.*
+*.sig
+src/
+pkg/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local secrets and signing material (never commit private keys)
+*.private
+*.secret
+*.key
+secrets/
+.gnupg/

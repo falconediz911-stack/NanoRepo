@@ -1,0 +1,61 @@
+# Copy this file into a NanoOS app source repository at:
+# .github/workflows/notify-nanorepo.yml
+#
+# Before enabling it:
+# 1. Register the exact source repository and package name in NanoRepo/config/source-registry.json.
+# 2. Add NANOREPO_DISPATCH_TOKEN as an Actions secret in this source repository.
+# 3. The token must be a fine-grained token scoped to NanoRepo with Contents: write.
+#
+# Replace the watched paths below with the actual app source paths.
+
+name: Notify NanoRepo about tool changes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "PKGBUILD"
+      - "packaging/**"
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch source update to NanoRepo
+        env:
+          GH_TOKEN: ${{ secrets.NANOREPO_DISPATCH_TOKEN }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          PACKAGE_NAME: REPLACE_WITH_REGISTERED_PACKAGE_NAME
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN"
+          test "$PACKAGE_NAME" != "REPLACE_WITH_REGISTERED_PACKAGE_NAME"
+
+          jq -n \
+            --arg source_repo "$SOURCE_REPOSITORY" \
+            --arg source_sha "$SOURCE_SHA" \
+            --arg package_name "$PACKAGE_NAME" \
+            --arg source_ref "$GITHUB_REF" \
+            '{
+              event_type: "nanoos.tool.source.updated",
+              client_payload: {
+                source_repo: $source_repo,
+                source_sha: $source_sha,
+                source_ref: $source_ref,
+                package_name: $package_name
+              }
+            }' > payload.json
+
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            https://api.github.com/repos/falconediz911-stack/NanoRepo/dispatches \
+            --data-binary @payload.json
