@@ -28,13 +28,13 @@ class NanoOSKeyringMetadataTests(unittest.TestCase):
         match = re.search(r"^_key_fingerprint='([0-9A-F]{40})'$", pkgbuild, re.M)
         self.assertIsNotNone(match)
         self.assertEqual(match.group(1), FINGERPRINT)
+        self.assertIn("nanoos-repo-signing-2026.pub::https://", pkgbuild)
         self.assertIn("gpg --batch --yes --dearmor", pkgbuild)
-        self.assertIn("pacman-key", (KEYRING_DIR / "nanoos-keyring.install").read_text(
+        install_script = (KEYRING_DIR / "nanoos-keyring.install").read_text(
             encoding="utf-8"
-        ))
-        self.assertIn("--populate nanoos", (KEYRING_DIR / "nanoos-keyring.install").read_text(
-            encoding="utf-8"
-        ))
+        )
+        self.assertIn("pacman-key", install_script)
+        self.assertIn("--populate nanoos", install_script)
 
 
 if __name__ == "__main__":
