@@ -2,7 +2,7 @@
 
 The official package-source and repository-infrastructure project for **NanoOS**.
 
-> **Current status:** The first Stable-channel package recipe, `nanoos-cpu-info` 0.1.0-1, is merged into `main`. NanoRepo validation passed and the Arch CI build produced a package archive. The package was installed with Pacman, executed in text and JSON modes, inspected with Pacman's ownership listing, and removed successfully on a bare-metal Arch system. A package upgrade test remains pending. No production Pacman endpoint, signing key, or client-ready repository is active.
+> **Current status:** The first Stable package, `nanoos-cpu-info` 0.1.0-1, is merged, built in Arch CI, and has passed bare-metal Pacman install/run/ownership/removal testing. The initial NanoOS Ed25519 repository signing key has been generated locally and passed a detached-signature test. Its public key and the first `nanoos-keyring` package recipe are being prepared in a development branch. No production Pacman endpoint, published signing keyring, or client-ready repository is active.
 
 ## Update architecture
 
@@ -25,8 +25,10 @@ The Zen 5 channel is separate because packages built with `-march=znver5` may co
 
 ## Current components
 
-- Read-only CPU capability inspector source: `components/nanoos-cpu-info/`
-- First Stable-channel PKGBUILD: `packages/stable/nanoos-cpu-info/PKGBUILD`
+- Read-only CPU capability inspector: `components/nanoos-cpu-info/`
+- Stable PKGBUILD: `packages/stable/nanoos-cpu-info/PKGBUILD`
+- Initial repository signing public key: `keys/nanoos-repo-signing-2026.asc`
+- Initial keyring package recipe: `packages/stable/nanoos-keyring/PKGBUILD`
 - CPU-info fixture coverage for AMD, Intel, and ARM-style `/proc/cpuinfo` data
 - CPU Engine design and EPP-based profile plan
 - Stable, Testing, and Zen 5 channel policies
@@ -37,13 +39,13 @@ The Zen 5 channel is separate because packages built with `-march=znver5` may co
 
 The CPU-info package is Python-based and marked `arch=('any')`; its runtime reads the machine it is running on rather than embedding a particular CPU model. The ARM/Intel test fixtures are synthetic compatibility tests, not physical-hardware certification.
 
-A component is not ready for end-user repository installation until its PKGBUILD, pinned source, dependencies, install paths, license metadata, tests, signatures, and published repository database have been verified.
+The initial signing key is Ed25519 with fingerprint `D35A46A77EDBFD4F069B71ACB329E36F597CD358` and expiration 2028-11-03. Only its public key is stored in this repository. The private key and passphrase must remain protected and offline except when used by the release-signing environment. See [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Hosting and activation
 
 GitHub stores the source code, PKGBUILDs, workflows, and release history. The binary Pacman repository is designed for Cloudflare R2 behind a public HTTPS custom domain.
 
-The proposed client URL is documented in [docs/PACMAN-CLIENT-CONFIG.md](docs/PACMAN-CLIENT-CONFIG.md), but it is **not live yet**. Publishing remains disabled until the R2 and signing secrets are configured. A NanoOS keyring package and trust bootstrap are also still required. See [docs/R2-HOSTING.md](docs/R2-HOSTING.md).
+The proposed client URL is documented in [docs/PACMAN-CLIENT-CONFIG.md](docs/PACMAN-CLIENT-CONFIG.md), but it is **not live yet**. Publishing remains disabled until the public signing fingerprint is independently published, the keyring bootstrap is reviewed, and the R2 and signing secrets are configured. See [docs/R2-HOSTING.md](docs/R2-HOSTING.md).
 
 ## Layout
 
@@ -53,6 +55,7 @@ channels/                Stable, Testing, and Zen 5 channel policies
 components/              NanoOS source components
 config/                  Registered source repository allowlist
 docs/                    Architecture, security, hosting, and integration docs
+keys/                    Public repository signing-key material
 packages/                Channel-specific PKGBUILD sources
 packaging/               PKGBUILD conventions and compiler profiles
 tests/                   Unit tests
@@ -61,11 +64,12 @@ tools/                   Repository and source-event validation
 
 ## Current limitations
 
-- Bare-metal Pacman install, execution, JSON output, ownership listing, and removal have passed on the development Arch system; a package upgrade test is still pending.
+- `nanoos-cpu-info` has passed bare-metal Pacman install, execution, ownership inspection, and removal; package upgrade testing remains pending.
+- The `nanoos-keyring` recipe is under review and has not yet passed its Arch build or real-system installation/population test.
+- The signing-key fingerprint still needs publication through an independent trusted NanoOS channel.
 - Cloudflare R2 bucket, public domain, and GitHub Actions secrets still need to be configured.
-- A dedicated signing key, public keyring bootstrap package, and documented fingerprint/revocation procedure are not yet available.
 - External app repositories must be registered in `config/source-registry.json` and use the documented dispatch template; no separate GameMode, Welcome, Update, Installer, or kernel source repositories are currently registered.
 - The ISO release hooks are merged into their repositories but have not yet been exercised by a published ISO release.
 - NanoOS Update must be updated to read `iso-latest.json`.
 
-See [docs/ACTIVATE-CONNECTIONS.md](docs/ACTIVATE-CONNECTIONS.md) for the GitHub Actions secrets, R2 setup, and activation checklist. See [docs/ROADMAP.md](docs/ROADMAP.md) for the remaining work.
+See [docs/ACTIVATE-CONNECTIONS.md](docs/ACTIVATE-CONNECTIONS.md) for GitHub Actions secrets, R2 setup, and the activation checklist. See [docs/ROADMAP.md](docs/ROADMAP.md) for remaining work.
