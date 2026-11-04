@@ -1,0 +1,15 @@
+post_install() {
+    if [[ -x /usr/bin/pacman-key && -d /etc/pacman.d/gnupg ]]; then
+        /usr/bin/pacman-key --populate nanoos
+    else
+        printf '%s\n' "nanoos-keyring: run 'pacman-key --init' then 'pacman-key --populate nanoos' to initialize trust."
+    fi
+}
+
+post_upgrade() {
+    if [[ -x /usr/bin/pacman-key && -d /etc/pacman.d/gnupg ]]; then
+        /usr/bin/pacman-key --populate nanoos
+    else
+        printf '%s\n' "nanoos-keyring: run 'pacman-key --init' then 'pacman-key --populate nanoos' to initialize trust."
+    fi
+}
