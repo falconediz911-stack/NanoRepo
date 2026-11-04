@@ -1,0 +1,58 @@
+pkgname=nanoos-keyring
+pkgver=20261104
+pkgrel=1
+pkgdesc="NanoOS package repository public signing keyring"
+arch=('any')
+url="https://github.com/falconediz911-stack/NanoRepo"
+license=('custom')
+depends=('pacman')
+makedepends=('gnupg')
+install=nanoos-keyring.install
+
+_key_fingerprint='D35A46A77EDBFD4F069B71ACB329E36F597CD358'
+_key_id='B329E36F597CD358'
+_source_commit='687d745fb5427621ce54b498a286303419b73f96'
+
+source=(
+  "nanoos-repo-signing-2026.asc::https://raw.githubusercontent.com/falconediz911-stack/NanoRepo/${_source_commit}/keys/nanoos-repo-signing-2026.asc"
+  "nanoos-trusted"
+  "LICENSE"
+)
+
+sha256sums=(
+  '3f5556ae23d97a9b69e2f57ccb824edeb0a7f8cb6a47ddcf73e2ceb6b912287d'
+  '3a586585e656c86235de3f44b59a3e5752f2f08eb051817e3c967a170a42e34b'
+  'c7bcde833edd59997cdc72a316be0805273ab14aa00dc88ca26c6990a6077f30'
+)
+
+build() {
+  gpg --batch --yes --dearmor \
+    --output "${srcdir}/nanoos.gpg" \
+    "${srcdir}/nanoos-repo-signing-2026.asc"
+}
+
+check() {
+  local fingerprint
+  fingerprint="$(
+    gpg --batch --show-keys --with-colons "${srcdir}/nanoos.gpg" |
+      awk -F: '$1 == "fpr" { print $10; exit }'
+  )"
+
+  if [[ "${fingerprint}" != "${_key_fingerprint}" ]]; then
+    printf 'ERROR: keyring fingerprint mismatch: %s\n' "${fingerprint}" >&2
+    return 1
+  fi
+
+  grep -Fxq "${_key_fingerprint}:6:" "${srcdir}/nanoos-trusted"
+}
+
+package() {
+  install -Dm644 "${srcdir}/nanoos.gpg" \
+    "${pkgdir}/usr/share/pacman/keyrings/nanoos.gpg"
+  install -Dm644 "${srcdir}/nanoos-trusted" \
+    "${pkgdir}/usr/share/pacman/keyrings/nanoos-trusted"
+  install -Dm644 "${srcdir}/nanoos-repo-signing-2026.asc" \
+    "${pkgdir}/usr/share/pacman/keyrings/nanoos-repo-signing-2026.asc"
+  install -Dm644 "${srcdir}/LICENSE" \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
