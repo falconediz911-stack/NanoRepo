@@ -7,8 +7,8 @@
 - [x] Add Zen 5 build-profile example
 - [x] Add CPU Engine design specification
 - [x] Add static repository validation and CI
-- [x] Create `reponanoult` working branch
 - [x] Add read-only CPU capability discovery prototype and unit tests
+- [x] Add AMD, Intel, and ARM-style CPU-info fixture coverage
 - [x] Add source-repository allowlist and dispatch validator
 - [x] Add generic app-source dispatch template
 - [x] Add disposable Arch-container package build workflow
@@ -21,7 +21,11 @@
 ## Phase 2 — Package set
 - [ ] Audit existing NanoOS app and kernel source trees
 - [x] Confirm MIT licensing for the `nanoos-cpu-info` component
-- [ ] Add and verify reviewed PKGBUILDs
+- [x] Add the first reviewed Stable PKGBUILD: `nanoos-cpu-info` 0.1.0-1
+- [x] Build the package archive successfully in Arch-container CI
+- [x] Smoke-test the extracted command on a development Arch host
+- [ ] Complete Pacman install, upgrade, and removal tests in a disposable Arch VM
+- [ ] Add further reviewed PKGBUILDs for the remaining NanoOS components
 - [ ] `nanoos-release` and base meta-package
 - [ ] NanoOS GameMode package
 - [ ] NanoOS Welcome package
@@ -30,7 +34,6 @@
 - [ ] `nan` package
 - [ ] NanoOS Gaming kernel package and matching headers
 - [ ] Hardware profiles and gaming presets
-- [ ] Build and test `nanoos-cpu-info` 0.1.0-1
 
 ## Phase 3 — CPU Engine and Zen 5
 - [x] Read-only hardware and sysfs capability discovery prototype
@@ -44,8 +47,9 @@
 - [ ] Create R2 bucket and connect a public HTTPS custom domain
 - [ ] Create dedicated package-signing key and publish its fingerprint
 - [ ] Configure NanoRepo R2 and GPG Actions secrets
+- [ ] Build the NanoOS keyring package and document trust bootstrap/revocation
 - [ ] Publish a first signed Testing repository
-- [ ] Build a NanoOS keyring package and trust bootstrap
+- [ ] Verify package and database signatures in a disposable VM
 - [ ] Verify install, upgrade, and rollback in disposable VMs
 - [ ] Enable Stable publication after testing
 - [ ] Stable promotion and retention procedure

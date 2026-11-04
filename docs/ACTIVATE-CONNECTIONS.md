@@ -65,9 +65,19 @@ Add these Actions secrets to `falconediz911-stack/NanoRepo`:
 
 Do not reuse a personal everyday signing key. Never commit private key material or print it in CI logs.
 
-## 5. Add real package recipes
+## 5. Add and validate package recipes
 
-The repository currently has channel policies and CI, but no PKGBUILD recipes. Add and test a real PKGBUILD for each installable NanoOS app or system component under one of:
+A first package recipe now exists:
+
+- `packages/stable/nanoos-cpu-info/PKGBUILD`
+- Package: `nanoos-cpu-info` 0.1.0-1
+- License: MIT
+- Architecture: `any`
+- Build: successful in the disposable Arch container used by pull-request CI
+- Extracted-command smoke test: passed on a development Arch host
+- Pacman-managed install, upgrade, and removal test in a disposable VM: still pending
+
+Add and review further installable NanoOS packages under one of:
 
 - `packages/stable/<package>/PKGBUILD`
 - `packages/testing/<package>/PKGBUILD`
@@ -89,21 +99,26 @@ The NanoOS Update client has not yet been changed to consume this feed. Its sour
 
 After secrets and source repos are configured:
 
-1. Publish a test ISO release only when the ISO and checksum assets are ready; verify the website ISO feed is updated.
-2. Push a harmless source change to a registered app repo; verify NanoRepo accepts the registered event.
-3. Add a reviewed PKGBUILD and verify the Arch build creates the expected package archive.
-4. After R2 and signing are configured, publish first to Testing and verify package and database signatures from a disposable VM.
-5. Only then add the Stable repository configuration to NanoOS clients.
+1. Complete the `nanoos-cpu-info` Pacman install/upgrade/remove test in a disposable Arch VM.
+2. Create the keyring bootstrap and verify the signing-key fingerprint on a clean VM.
+3. Publish first to Testing; verify package and database signatures from a disposable VM.
+4. Push a harmless source change to a registered app repo; verify NanoRepo accepts the registered event.
+5. Publish a test ISO release only when the ISO and checksum assets are ready; verify the website ISO feed is updated.
+6. Only then add the Stable repository configuration to NanoOS clients.
 
 ## Current readiness
 
-- GitHub workflows merged: yes.
-- NanoRepo static CI: passed on main.
-- Arch container build workflow: passed its current no-PKGBUILD path.
+- NanoRepo workflows merged: yes.
+- Static validation on `main`: passed.
+- Pull-request Arch package build for `nanoos-cpu-info`: passed; package archive artifact produced.
+- AMD, Intel, and ARM-style CPU fixture tests: passed in CI.
+- Extracted package command on development Arch host: passed.
+- Pacman-managed install/upgrade/remove test in disposable VM: pending.
 - App source repositories registered: not yet (no separate app source repos are visible).
-- PKGBUILDs: none yet.
-- R2 bucket/domain: not configured here.
-- Signing key/secrets: not configured here.
+- PKGBUILDs: one reviewed Stable recipe exists, for `nanoos-cpu-info`.
+- R2 bucket/domain: not configured.
+- Dedicated signing key and Actions secrets: not configured.
+- NanoOS keyring bootstrap package: pending.
 - NanoOS Update reading the ISO feed: pending.
 
-The proposed Pacman URL is not live until steps 3–5 are complete.
+The proposed Pacman URL is not live until hosting, signing, keyring bootstrap, and VM verification are complete.
