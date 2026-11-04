@@ -2,7 +2,7 @@
 
 The official package-source and repository-infrastructure project for **NanoOS**.
 
-> **Current status:** The first Stable-channel package recipe, `nanoos-cpu-info` 0.1.0-1, is merged into `main`. NanoRepo validation passed, and the pull-request Arch build produced a package archive. The extracted command was smoke-tested on a development Arch system. A Pacman-managed install/upgrade/removal test in a disposable VM is still pending. No production Pacman endpoint, signing key, or client-ready repository is active. Do not add the proposed repository URL to a daily-use system yet.
+> **Current status:** The first Stable-channel package recipe, `nanoos-cpu-info` 0.1.0-1, is merged into `main`. NanoRepo validation passed and the Arch CI build produced a package archive. The package was installed with Pacman, executed in text and JSON modes, inspected with Pacman's ownership listing, and removed successfully on a bare-metal Arch system. A package upgrade test remains pending. No production Pacman endpoint, signing key, or client-ready repository is active.
 
 ## Update architecture
 
@@ -35,9 +35,9 @@ The Zen 5 channel is separate because packages built with `-march=znver5` may co
 - Conditional signed publishing workflow for Cloudflare R2
 - Separate ISO release metadata workflow integrations
 
-The CPU-info package is Python-based and marked `arch=('any')`; its runtime reads the machine it is running on rather than embedding Falcon's CPU model. The ARM/Intel test fixtures are synthetic compatibility tests, not physical-hardware certification.
+The CPU-info package is Python-based and marked `arch=('any')`; its runtime reads the machine it is running on rather than embedding a particular CPU model. The ARM/Intel test fixtures are synthetic compatibility tests, not physical-hardware certification.
 
-A component is not ready for end-user installation until its PKGBUILD, pinned source, dependencies, install paths, license metadata, tests, signatures, and published repository database have been verified.
+A component is not ready for end-user repository installation until its PKGBUILD, pinned source, dependencies, install paths, license metadata, tests, signatures, and published repository database have been verified.
 
 ## Hosting and activation
 
@@ -61,7 +61,7 @@ tools/                   Repository and source-event validation
 
 ## Current limitations
 
-- The first package has a successful CI archive build and extracted-command smoke test; Pacman install/upgrade/removal validation in a disposable VM remains pending.
+- Bare-metal Pacman install, execution, JSON output, ownership listing, and removal have passed on the development Arch system; a package upgrade test is still pending.
 - Cloudflare R2 bucket, public domain, and GitHub Actions secrets still need to be configured.
 - A dedicated signing key, public keyring bootstrap package, and documented fingerprint/revocation procedure are not yet available.
 - External app repositories must be registered in `config/source-registry.json` and use the documented dispatch template; no separate GameMode, Welcome, Update, Installer, or kernel source repositories are currently registered.
