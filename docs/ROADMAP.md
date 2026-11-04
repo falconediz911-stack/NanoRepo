@@ -24,7 +24,8 @@
 - [x] Add the first reviewed Stable PKGBUILD: `nanoos-cpu-info` 0.1.0-1
 - [x] Build the package archive successfully in Arch-container CI
 - [x] Smoke-test the extracted command on a development Arch host
-- [ ] Complete Pacman install, upgrade, and removal tests in a disposable Arch VM
+- [x] Install, run, inspect ownership, and remove the package with Pacman on bare-metal Arch
+- [ ] Test package upgrade behavior with a later package version
 - [ ] Add further reviewed PKGBUILDs for the remaining NanoOS components
 - [ ] `nanoos-release` and base meta-package
 - [ ] NanoOS GameMode package
@@ -49,9 +50,9 @@
 - [ ] Configure NanoRepo R2 and GPG Actions secrets
 - [ ] Build the NanoOS keyring package and document trust bootstrap/revocation
 - [ ] Publish a first signed Testing repository
-- [ ] Verify package and database signatures in a disposable VM
-- [ ] Verify install, upgrade, and rollback in disposable VMs
-- [ ] Enable Stable publication after testing
+- [ ] Verify package and database signatures on the real Arch machine
+- [ ] Verify repository refresh and package install through Pacman on the real Arch machine
+- [ ] Enable Stable publication after Testing verification
 - [ ] Stable promotion and retention procedure
 - [ ] Add a Zen 5 opt-in client configuration after hardware validation
 
