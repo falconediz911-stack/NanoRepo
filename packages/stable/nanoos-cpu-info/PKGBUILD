@@ -1,0 +1,27 @@
+pkgname=nanoos-cpu-info
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Read-only CPU and cpufreq capability inspector for NanoOS"
+arch=('any')
+url="https://github.com/falconediz911-stack/NanoRepo"
+license=('MIT')
+depends=('python')
+
+_source_commit='a7e4f695e6d888cad75c3243ca827396f5382c7c'
+source=(
+  "nanoos_cpu_info.py::https://raw.githubusercontent.com/falconediz911-stack/NanoRepo/${_source_commit}/components/nanoos-cpu-info/nanoos_cpu_info.py"
+  "LICENSE"
+)
+sha256sums=(
+  '0e318f82e12b7de278a0b7764255c2eea31f7ffee34a072a5faecaf9902494ba'
+  'e377cdcf4b6d6091c106849ff48c4d33e10877d9253639f33f9330670e916a06'
+)
+
+check() {
+  python -m py_compile "${srcdir}/nanoos_cpu_info.py"
+}
+
+package() {
+  install -Dm755 "${srcdir}/nanoos_cpu_info.py" "${pkgdir}/usr/bin/nanoos-cpu-info"
+  install -Dm644 "${srcdir}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

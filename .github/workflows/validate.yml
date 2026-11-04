@@ -34,3 +34,10 @@ jobs:
 
       - name: Validate repository structure and PKGBUILDs
         run: python tools/validate_repo.py
+
+  package-build:
+    name: Build package archives in Arch
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/build-pacman.yml
+    permissions:
+      contents: read

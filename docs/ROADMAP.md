@@ -14,25 +14,23 @@
 - [x] Add disposable Arch-container package build workflow
 - [x] Add conditional signed Cloudflare R2 publishing workflow
 - [x] Add Pacman client configuration and hosting instructions
-- [x] Prepare ISO release metadata workflow in the ISO repository
-- [x] Prepare separate ISO feed updater in the website repository
-- [ ] Merge the NanoRepo source-connection PR into main
-- [ ] Merge the ISO release hook and website feed hook PRs
+- [x] Merge NanoRepo source-connection workflow into `main`
+- [x] Merge ISO release hook and website ISO-feed hook
 - [ ] Add source-repository dispatch secrets
 
 ## Phase 2 — Package set
 - [ ] Audit existing NanoOS app and kernel source trees
-- [ ] Confirm project/package licensing and source provenance
-- [ ] Add reviewed PKGBUILDs
-- [ ] nanoos-release and base meta-package
+- [x] Confirm MIT licensing for the `nanoos-cpu-info` component
+- [ ] Add and verify reviewed PKGBUILDs
+- [ ] `nanoos-release` and base meta-package
 - [ ] NanoOS GameMode package
 - [ ] NanoOS Welcome package
 - [ ] NanoOS Update package
 - [ ] NanoOS Installer tools package
-- [ ] nan package
+- [ ] `nan` package
 - [ ] NanoOS Gaming kernel package and matching headers
 - [ ] Hardware profiles and gaming presets
-- [ ] Package the read-only CPU discovery utility
+- [ ] Build and test `nanoos-cpu-info` 0.1.0-1
 
 ## Phase 3 — CPU Engine and Zen 5
 - [x] Read-only hardware and sysfs capability discovery prototype
