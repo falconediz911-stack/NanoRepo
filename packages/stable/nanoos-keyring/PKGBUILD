@@ -13,8 +13,10 @@ _key_fingerprint='D35A46A77EDBFD4F069B71ACB329E36F597CD358'
 _key_id='B329E36F597CD358'
 _source_commit='687d745fb5427621ce54b498a286303419b73f96'
 
+# Give the armored public key a .pub local filename: makepkg treats .asc
+# and .sig sources as detached source signatures rather than ordinary files.
 source=(
-  "nanoos-repo-signing-2026.asc::https://raw.githubusercontent.com/falconediz911-stack/NanoRepo/${_source_commit}/keys/nanoos-repo-signing-2026.asc"
+  "nanoos-repo-signing-2026.pub::https://raw.githubusercontent.com/falconediz911-stack/NanoRepo/${_source_commit}/keys/nanoos-repo-signing-2026.asc"
   "nanoos-trusted"
   "LICENSE"
 )
@@ -28,7 +30,7 @@ sha256sums=(
 build() {
   gpg --batch --yes --dearmor \
     --output "${srcdir}/nanoos.gpg" \
-    "${srcdir}/nanoos-repo-signing-2026.asc"
+    "${srcdir}/nanoos-repo-signing-2026.pub"
 }
 
 check() {
@@ -51,7 +53,7 @@ package() {
     "${pkgdir}/usr/share/pacman/keyrings/nanoos.gpg"
   install -Dm644 "${srcdir}/nanoos-trusted" \
     "${pkgdir}/usr/share/pacman/keyrings/nanoos-trusted"
-  install -Dm644 "${srcdir}/nanoos-repo-signing-2026.asc" \
+  install -Dm644 "${srcdir}/nanoos-repo-signing-2026.pub" \
     "${pkgdir}/usr/share/pacman/keyrings/nanoos-repo-signing-2026.asc"
   install -Dm644 "${srcdir}/LICENSE" \
     "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
