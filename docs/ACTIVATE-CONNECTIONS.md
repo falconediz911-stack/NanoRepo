@@ -41,7 +41,7 @@ The Pacman archive host is separate from GitHub source control.
 
 1. Create an R2 bucket, suggested name: `nanorepo`.
 2. Create an R2 S3 API token with **Object Read & Write**, scoped to that bucket only.
-3. Connect a public HTTPS custom domain to the bucket. The proposed domain is `repo.nanoosproject.org`; verify that the domain is available and controlled by NanoOS before using it.
+3. Connect a public HTTPS custom domain. The proposed domain is `repo.nanoosproject.org`; verify that the domain is available and controlled by NanoOS before using it.
 4. Record the account ID, access key ID, and secret access key in a secure password manager.
 
 Cloudflare setup reference: https://developers.cloudflare.com/r2/get-started/s3/
@@ -67,23 +67,24 @@ Do not reuse a personal everyday signing key. Never commit private key material 
 
 ## 5. Add and validate package recipes
 
-A first package recipe now exists:
+The first package recipe exists and has been built in pull-request CI:
 
 - `packages/stable/nanoos-cpu-info/PKGBUILD`
 - Package: `nanoos-cpu-info` 0.1.0-1
 - License: MIT
 - Architecture: `any`
 - Build: successful in the disposable Arch container used by pull-request CI
-- Extracted-command smoke test: passed on a development Arch host
-- Pacman-managed install, upgrade, and removal test in a disposable VM: still pending
+- Pacman install and run: successful on a bare-metal Arch system
+- JSON output and package ownership listing: successful
+- Pacman removal: successful
+- Package upgrade: not yet tested
+- Package and repository signatures: not yet configured
 
 Add and review further installable NanoOS packages under one of:
 
 - `packages/stable/<package>/PKGBUILD`
 - `packages/testing/<package>/PKGBUILD`
 - `packages/znver5/<package>/PKGBUILD`
-
-Before publishing a package, verify its source revision, license, dependencies, install paths, versioning, and install/upgrade/remove behavior in a disposable Arch/NanoOS VM.
 
 The Zen 5 channel is explicit opt-in only. Do not enable it on non-Zen-5 systems.
 
@@ -99,9 +100,9 @@ The NanoOS Update client has not yet been changed to consume this feed. Its sour
 
 After secrets and source repos are configured:
 
-1. Complete the `nanoos-cpu-info` Pacman install/upgrade/remove test in a disposable Arch VM.
-2. Create the keyring bootstrap and verify the signing-key fingerprint on a clean VM.
-3. Publish first to Testing; verify package and database signatures from a disposable VM.
+1. Test package upgrade behavior with a later build of `nanoos-cpu-info`.
+2. Build the NanoOS keyring bootstrap and independently verify the signing-key fingerprint.
+3. Publish first to Testing; verify package and database signatures.
 4. Push a harmless source change to a registered app repo; verify NanoRepo accepts the registered event.
 5. Publish a test ISO release only when the ISO and checksum assets are ready; verify the website ISO feed is updated.
 6. Only then add the Stable repository configuration to NanoOS clients.
@@ -112,8 +113,8 @@ After secrets and source repos are configured:
 - Static validation on `main`: passed.
 - Pull-request Arch package build for `nanoos-cpu-info`: passed; package archive artifact produced.
 - AMD, Intel, and ARM-style CPU fixture tests: passed in CI.
-- Extracted package command on development Arch host: passed.
-- Pacman-managed install/upgrade/remove test in disposable VM: pending.
+- Bare-metal Arch Pacman install/run/JSON/ownership/removal test: passed.
+- Pacman upgrade test: pending.
 - App source repositories registered: not yet (no separate app source repos are visible).
 - PKGBUILDs: one reviewed Stable recipe exists, for `nanoos-cpu-info`.
 - R2 bucket/domain: not configured.
@@ -121,4 +122,4 @@ After secrets and source repos are configured:
 - NanoOS keyring bootstrap package: pending.
 - NanoOS Update reading the ISO feed: pending.
 
-The proposed Pacman URL is not live until hosting, signing, keyring bootstrap, and VM verification are complete.
+The proposed Pacman URL is not live until hosting, signing, keyring bootstrap, and release verification are complete.
