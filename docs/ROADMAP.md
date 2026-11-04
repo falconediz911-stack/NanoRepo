@@ -26,6 +26,7 @@
 - [x] Smoke-test the extracted command on a development Arch host
 - [x] Install, run, inspect ownership, and remove the package with Pacman on bare-metal Arch
 - [ ] Test package upgrade behavior with a later package version
+- [ ] Build and test `nanoos-keyring` against Pacman on the real Arch machine
 - [ ] Add further reviewed PKGBUILDs for the remaining NanoOS components
 - [ ] `nanoos-release` and base meta-package
 - [ ] NanoOS GameMode package
@@ -45,10 +46,13 @@
 - [ ] Zen 5 hardware testing and benchmark evidence
 
 ## Phase 4 — Repository operations
+- [x] Generate the initial dedicated NanoOS Ed25519 signing key
+- [x] Verify a detached test signature locally
+- [x] Publish the initial public key source and owner-trust metadata in the keyring development branch
+- [ ] Merge and build `nanoos-keyring`
+- [ ] Publish the full signing-key fingerprint through an independent trusted channel
 - [ ] Create R2 bucket and connect a public HTTPS custom domain
-- [ ] Create dedicated package-signing key and publish its fingerprint
 - [ ] Configure NanoRepo R2 and GPG Actions secrets
-- [ ] Build the NanoOS keyring package and document trust bootstrap/revocation
 - [ ] Publish a first signed Testing repository
 - [ ] Verify package and database signatures on the real Arch machine
 - [ ] Verify repository refresh and package install through Pacman on the real Arch machine

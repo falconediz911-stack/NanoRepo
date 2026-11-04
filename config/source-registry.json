@@ -4,7 +4,7 @@
     "falconediz911-stack/NanoRepo": {
       "role": "first-party-components-and-package-recipes",
       "events": ["nanoos.tool.source.updated"],
-      "packages": ["nanoos-cpu-info"],
+      "packages": ["nanoos-cpu-info", "nanoos-keyring"],
       "package_builds": true
     },
     "falconediz911-stack/NanoOS-Beta21-ISO": {

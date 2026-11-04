@@ -53,17 +53,28 @@ Add these Actions secrets to `falconediz911-stack/NanoRepo`:
 - `R2_SECRET_ACCESS_KEY`
 - `R2_BUCKET`
 
-## 4. Configure package signing
+## 4. NanoOS repository signing key
 
-Create a dedicated NanoOS package-signing key. Verify and document its full fingerprint before clients trust it. Keep a protected recovery copy of the private key.
+A dedicated Ed25519 key has been generated locally and its detached-signature test passed.
 
-Add these Actions secrets to `falconediz911-stack/NanoRepo`:
+- User ID: `NanoOS Repository Signing`
+- Fingerprint: `D35A46A77EDBFD4F069B71ACB329E36F597CD358`
+- Long key ID: `B329E36F597CD358`
+- Expires: 2028-11-03
+- Public key: `keys/nanoos-repo-signing-2026.asc`
+- Keyring package recipe: `packages/stable/nanoos-keyring/PKGBUILD`
+
+The public key and keyring recipe are being reviewed in a development branch. The private key, passphrase, and revocation certificate must never be committed, attached to CI artifacts, or pasted into chat. Keep a protected offline recovery copy.
+
+Before client trust is enabled, publish the full fingerprint through an independent trusted NanoOS channel, verify the keyring package behavior, and document key rotation and revocation. The initial key bootstrap requires an administrator to compare the full fingerprint independently, then add and locally sign the public key with Pacman. A keyring package cannot authenticate itself.
+
+When the repository is ready for signed publishing, add these Actions secrets to NanoRepo:
 
 - `NANOREPO_GPG_PRIVATE_KEY_B64` — base64-encoded ASCII-armored private key
-- `NANOREPO_GPG_KEY_ID` — full signing-key ID
+- `NANOREPO_GPG_KEY_ID` — use the full fingerprint, not the short key ID
 - `NANOREPO_GPG_PASSPHRASE` — signing-key passphrase
 
-Do not reuse a personal everyday signing key. Never commit private key material or print it in CI logs.
+Add secrets only after the workflow and branch-protection policy have been reviewed. Never expose secret values to chat or logs.
 
 ## 5. Add and validate package recipes
 
@@ -78,7 +89,13 @@ The first package recipe exists and has been built in pull-request CI:
 - JSON output and package ownership listing: successful
 - Pacman removal: successful
 - Package upgrade: not yet tested
-- Package and repository signatures: not yet configured
+
+The initial keyring package is under development:
+
+- `packages/stable/nanoos-keyring/PKGBUILD`
+- Package: `nanoos-keyring` 20261104-1
+- Contains public keyring data and owner-trust metadata only
+- Arch build and Pacman population tests: pending CI and real-machine testing
 
 Add and review further installable NanoOS packages under one of:
 
@@ -101,25 +118,25 @@ The NanoOS Update client has not yet been changed to consume this feed. Its sour
 After secrets and source repos are configured:
 
 1. Test package upgrade behavior with a later build of `nanoos-cpu-info`.
-2. Build the NanoOS keyring bootstrap and independently verify the signing-key fingerprint.
-3. Publish first to Testing; verify package and database signatures.
-4. Push a harmless source change to a registered app repo; verify NanoRepo accepts the registered event.
-5. Publish a test ISO release only when the ISO and checksum assets are ready; verify the website ISO feed is updated.
-6. Only then add the Stable repository configuration to NanoOS clients.
+2. Build and test `nanoos-keyring` on the real Arch machine after independently checking its public-key fingerprint.
+3. Create the R2 bucket/domain and configure protected signing/publishing secrets.
+4. Publish first to Testing; verify package and database signatures on the real Arch machine.
+5. Push a harmless source change to a registered app repo; verify NanoRepo accepts the registered event.
+6. Publish a test ISO release only when the ISO and checksum assets are ready; verify the website ISO feed is updated.
+7. Only then add the Stable repository configuration to NanoOS clients.
 
 ## Current readiness
 
 - NanoRepo workflows merged: yes.
 - Static validation on `main`: passed.
-- Pull-request Arch package build for `nanoos-cpu-info`: passed; package archive artifact produced.
+- `nanoos-cpu-info` Arch package build: passed.
 - AMD, Intel, and ARM-style CPU fixture tests: passed in CI.
-- Bare-metal Arch Pacman install/run/JSON/ownership/removal test: passed.
-- Pacman upgrade test: pending.
-- App source repositories registered: not yet (no separate app source repos are visible).
-- PKGBUILDs: one reviewed Stable recipe exists, for `nanoos-cpu-info`.
-- R2 bucket/domain: not configured.
-- Dedicated signing key and Actions secrets: not configured.
-- NanoOS keyring bootstrap package: pending.
+- Bare-metal Arch Pacman install/run/JSON/ownership/removal test for `nanoos-cpu-info`: passed.
+- Initial Ed25519 signing key generated and local detached-signature verification: passed.
+- Public signing key source and `nanoos-keyring` recipe: under review in a development branch.
+- `nanoos-keyring` Arch build and Pacman population test: pending.
+- Public fingerprint through an independent channel: pending.
+- R2 bucket/domain and GitHub Actions secrets: not configured.
 - NanoOS Update reading the ISO feed: pending.
 
-The proposed Pacman URL is not live until hosting, signing, keyring bootstrap, and release verification are complete.
+The proposed Pacman URL is not live until package signing, trust bootstrap, hosting, and real-machine verification are complete.

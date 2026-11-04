@@ -1,0 +1,8 @@
+NanoOS public repository keyring metadata
+
+This package contains public OpenPGP key material and Pacman owner-trust
+metadata for the NanoOS package repository. It does not contain the private
+signing key or grant rights to any separate software project.
+
+The public key is distributed so users can independently verify its full
+fingerprint before trusting repository signatures.

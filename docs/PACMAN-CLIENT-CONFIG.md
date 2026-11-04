@@ -32,11 +32,31 @@ Server = https://repo.nanoosproject.org/znver5/$arch
 
 Do not enable the Zen 5 channel on older or unverified CPUs. Pacman does not automatically choose packages based on CPU capabilities. Packages in this channel may contain Zen 5-only instructions.
 
-## Trust bootstrap
+## Initial trust bootstrap
 
-The package-signing key must be distributed and verified independently before enabling a repository with required signatures. The NanoOS keyring package and its fingerprint/revocation procedure have not yet been created. Do not weaken `SigLevel` to bypass missing signatures.
+The initial NanoOS repository signing identity is:
 
-After the repository host is live and the trusted key is installed, refresh and update with:
+- User ID: `NanoOS Repository Signing`
+- Algorithm: Ed25519
+- Full fingerprint: `D35A46A77EDBFD4F069B71ACB329E36F597CD358`
+- Long key ID: `B329E36F597CD358`
+- Expiration: 2028-11-03
+
+Obtain `nanoos-repo-signing-2026.asc` from the official NanoRepo source and compare its full fingerprint with the value above using an independent trusted publication of the fingerprint. Do not rely solely on a key file and fingerprint served from the same unverified location.
+
+Only after the fingerprint matches exactly, add and locally sign the key:
+
+```sh
+sudo pacman-key --add nanoos-repo-signing-2026.asc
+sudo pacman-key --fingerprint D35A46A77EDBFD4F069B71ACB329E36F597CD358
+sudo pacman-key --lsign-key D35A46A77EDBFD4F069B71ACB329E36F597CD358
+```
+
+The `nanoos-keyring` package installs the binary keyring and owner-trust metadata under `/usr/share/pacman/keyrings/`, then invokes `pacman-key --populate nanoos` when Pacman's local keyring is initialized. The initial local fingerprint verification is still required; a keyring package cannot establish its own authenticity.
+
+Do not weaken signature policy to bypass trust errors. In particular, do not use `TrustAll` or `SigLevel = Never`.
+
+After the repository host is live and the signing key is trusted, refresh and update with:
 
 ```sh
 sudo pacman -Syyu
