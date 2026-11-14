@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "product": "NanoOS",
+  "channel": "stable",
+  "version": null,
+  "release_notes_url": "https://nanoosproject.org/releases",
+  "published_at": null,
+  "summary": "No ISO has been published to this channel yet.",
+  "iso": null
+}
