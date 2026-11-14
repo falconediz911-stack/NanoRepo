@@ -1,0 +1,128 @@
+name: Build, sign and publish to the nanoos repository
+
+# Push a PKGBUILD under packages/<name>/ on this branch and this workflow
+# builds it in a disposable Arch container, signs it with the NanoOS
+# repository key and merges it into the signed `nanoos` pacman repository
+# (GitHub release `repo-nanoos`). NanoOS PCs receive it with `pacman -Syu`.
+
+on:
+  push:
+    branches: [nanoos-system]
+    paths: ["packages/**", ".github/workflows/publish.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write            # upload release assets
+
+# One lock for every branch that publishes into the nanoos repository, so two
+# pushes never race on the shared database.
+concurrency:
+  group: nanoos-repo-publish
+  cancel-in-progress: false
+
+env:
+  REPO_NAME: nanoos
+  RELEASE_TAG: repo-nanoos
+  SIGNING_KEY: D35A46A77EDBFD4F069B71ACB329E36F597CD358
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: pacman -Syu --noconfirm --needed git sudo github-cli gnupg
+
+      - name: Build packages
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          recipes=(packages/*/PKGBUILD)
+          if (( ${#recipes[@]} == 0 )); then
+            echo "has_packages=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No PKGBUILDs on this branch yet; nothing to build."
+            exit 0
+          fi
+          useradd --create-home --shell /bin/bash nanobuild
+          printf 'nanobuild ALL=(ALL) NOPASSWD: /usr/bin/pacman\n' > /etc/sudoers.d/nanobuild
+          chmod 0440 /etc/sudoers.d/nanobuild
+          mkdir -p dist .makepkg-sources
+          chown -R nanobuild:nanobuild "$GITHUB_WORKSPACE"
+          for recipe in "${recipes[@]}"; do
+            dir="$GITHUB_WORKSPACE/${recipe%/PKGBUILD}"
+            echo "::group::Building ${dir##*/}"
+            runuser -u nanobuild -- env PKGDEST="$GITHUB_WORKSPACE/dist" \
+              SRCDEST="$GITHUB_WORKSPACE/.makepkg-sources" \
+              bash -lc "cd '$dir' && makepkg --cleanbuild --syncdeps --noconfirm"
+            echo "::endgroup::"
+          done
+          for package in dist/*.pkg.tar.zst; do
+            case "${package##*/}" in *:*)
+              echo "::error::${package##*/}: epoch ':' is not allowed in GitHub asset names"; exit 1;;
+            esac
+          done
+          echo "has_packages=true" >> "$GITHUB_OUTPUT"
+          ls -la dist
+
+      - name: Keep the built packages
+        if: steps.build.outputs.has_packages == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-packages
+          path: dist/*.pkg.tar.zst
+          retention-days: 14
+
+      - name: Sign and publish
+        if: steps.build.outputs.has_packages == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NANOREPO_GPG_PRIVATE_KEY_B64: ${{ secrets.NANOREPO_GPG_PRIVATE_KEY_B64 }}
+          NANOREPO_GPG_PASSPHRASE: ${{ secrets.NANOREPO_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NANOREPO_GPG_PRIVATE_KEY_B64:-}" ]]; then
+            echo "::notice::Built, but not published: the NANOREPO_GPG_PRIVATE_KEY_B64 secret is not set."
+            exit 0
+          fi
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          install -d -m 700 "$GNUPGHOME"
+          printf '%s' "$NANOREPO_GPG_PRIVATE_KEY_B64" | base64 -d | gpg --batch --import
+          # Passphrase (if any) comes from a protected file, never from arguments.
+          printf '%s' "${NANOREPO_GPG_PASSPHRASE:-}" > "$GNUPGHOME/passphrase"
+          chmod 600 "$GNUPGHOME/passphrase"
+          install -d "$RUNNER_TEMP/bin"
+          printf '#!/bin/sh\nexec /usr/bin/gpg --batch --yes --pinentry-mode loopback --passphrase-file "$GNUPGHOME/passphrase" "$@"\n' > "$RUNNER_TEMP/bin/gpg"
+          chmod 700 "$RUNNER_TEMP/bin/gpg"
+          export PATH="$RUNNER_TEMP/bin:$PATH"
+
+          cd dist
+          # Merge into the database already published (kernels, other branches).
+          if gh release download "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" \
+               -p "$REPO_NAME.db" -p "$REPO_NAME.files"; then
+            mv "$REPO_NAME.db" "$REPO_NAME.db.tar.gz"
+            mv "$REPO_NAME.files" "$REPO_NAME.files.tar.gz"
+          else
+            gh release create "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --latest=false \
+              --title "NanoOS repository: $REPO_NAME" --notes "Pacman repository \`$REPO_NAME\`."
+          fi
+          for package in *.pkg.tar.zst; do
+            gpg --local-user "$SIGNING_KEY" --detach-sign --no-armor --output "$package.sig" "$package"
+          done
+          repo-add --sign --key "$SIGNING_KEY" --verify "$REPO_NAME.db.tar.gz" *.pkg.tar.zst
+          for base in "$REPO_NAME.db" "$REPO_NAME.files"; do
+            rm -f "$base" "$base.sig"
+            cp "$base.tar.gz" "$base"; cp "$base.tar.gz.sig" "$base.sig"
+          done
+          for file in *.pkg.tar.zst "$REPO_NAME.db" "$REPO_NAME.files"; do
+            gpg --verify "$file.sig" "$file"
+          done
+          gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --clobber \
+            *.pkg.tar.zst *.pkg.tar.zst.sig \
+            "$REPO_NAME.db" "$REPO_NAME.db.sig" "$REPO_NAME.files" "$REPO_NAME.files.sig"
+          echo "::notice::Published $(ls *.pkg.tar.zst | wc -l) package(s) to $REPO_NAME."
