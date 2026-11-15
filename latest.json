@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "product": "NanoOS",
-  "channel": "beta",
-  "version": "beta21",
+  "channel": "release",
+  "version": "release",
   "release_notes_url": "https://nanoosproject.org/#changelog",
   "published_at": "2026-11-15T19:00:47Z",
-  "summary": "NanoOS Gaming Beta 21 is available.",
+  "summary": "NanoOS Gaming is available.",
   "iso": {
     "name": "nanoos-gaming-2026.11.15-beta21-x86_64.iso",
     "size": 5035974656,
