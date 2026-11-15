@@ -2,22 +2,9 @@
 
 This checklist activates the source workflows that are already merged into the default branches. Keep private tokens, signing keys, passphrases, and R2 credentials inside the relevant provider dashboards. Never put them in a Git commit, issue, screenshot, or chat.
 
-## 1. ISO release → NanoOS Website and NanoRepo
+## 1. ISO releases
 
-Open the Actions secrets settings for:
-
-`falconediz911-stack/NanoOS-Beta21-ISO`
-
-Create two fine-grained GitHub personal access tokens. Each token should have access only to its named target repository and only the repository permission **Contents: Read and write**.
-
-| Secret in the ISO repository | Token repository access |
-|---|---|
-| `NANOREPO_DISPATCH_TOKEN` | `falconediz911-stack/NanoRepo` only |
-| `NANOOS_WEBSITE_DISPATCH_TOKEN` | `falconediz911-stack/nanoos-website` only |
-
-Store each token as the matching repository Actions secret. Do not paste the values into source files.
-
-The dispatch API requires Contents: write on the target repository. GitHub reference: https://docs.github.com/en/rest/repos/repos#create-a-repository-dispatch-event
+ISO releases are published by NanoRepo itself with `tools/nanorepo/publish_iso.py` from the NanoOS ISO profile: the ISO parts, a signed `SHA256SUMS` and `JOIN.txt` go to the GitHub Release `iso-release`, and `latest.json` on the `nanoos-iso` branch describes the current ISO. No separate ISO repository or dispatch token is needed.
 
 ## 2. NanoOS app source repositories → NanoRepo
 
@@ -107,9 +94,7 @@ The Zen 5 channel is explicit opt-in only. Do not enable it on non-Zen-5 systems
 
 ## 6. Finish NanoOS Update ISO integration
 
-The ISO release workflow and website receiver are in place. When a real ISO GitHub Release is published with its ISO parts and checksum attached, the website writes:
-
-`public/releases/iso-latest.json`
+ISO releases are described by `latest.json` on the `nanoos-iso` branch (see section 1).
 
 The NanoOS Update client has not yet been changed to consume this feed. Its source repository is not currently visible in the connected GitHub inventory, so that client change remains pending until its source is added.
 
@@ -122,7 +107,7 @@ After secrets and source repos are configured:
 3. Create the R2 bucket/domain and configure protected signing/publishing secrets.
 4. Publish first to Testing; verify package and database signatures on the real Arch machine.
 5. Push a harmless source change to a registered app repo; verify NanoRepo accepts the registered event.
-6. Publish a test ISO release only when the ISO and checksum assets are ready; verify the website ISO feed is updated.
+6. Publish ISO releases with `publish_iso.py`; verify `latest.json` on the `nanoos-iso` branch is updated.
 7. Only then add the Stable repository configuration to NanoOS clients.
 
 ## Current readiness
