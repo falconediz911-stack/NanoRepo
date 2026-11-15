@@ -7,28 +7,28 @@
   "published_at": "2026-11-15T19:00:47Z",
   "summary": "NanoOS Gaming is available.",
   "iso": {
-    "name": "nanoos-gaming-2026.11.15-beta21-x86_64.iso",
+    "name": "nanoos-gaming-2026.11.15-x86_64.iso",
     "size": 5035974656,
     "sha256": "a7f47b5b15915fac0888b5dd082542f9a154a95127b9349ad324db7857e5a1aa",
     "release_url": "https://github.com/falconediz911-stack/NanoRepo/releases/tag/iso-release",
     "parts": [
       {
-        "name": "nanoos-gaming-2026.11.15-beta21-x86_64.iso.part-00",
+        "name": "nanoos-gaming-2026.11.15-x86_64.iso.part-00",
         "size": 1992294400,
         "sha256": "43a442fd6dd2cd3ea72bc2e7d762987ce4f721e45443b7e03c79cf1807e846a4",
-        "url": "https://github.com/falconediz911-stack/NanoRepo/releases/download/iso-release/nanoos-gaming-2026.11.15-beta21-x86_64.iso.part-00"
+        "url": "https://github.com/falconediz911-stack/NanoRepo/releases/download/iso-release/nanoos-gaming-2026.11.15-x86_64.iso.part-00"
       },
       {
-        "name": "nanoos-gaming-2026.11.15-beta21-x86_64.iso.part-01",
+        "name": "nanoos-gaming-2026.11.15-x86_64.iso.part-01",
         "size": 1992294400,
         "sha256": "46c521bf9ecbe5e6d67a8f918067c30c5f222d3d55baffbb6fe95b20ad7715d7",
-        "url": "https://github.com/falconediz911-stack/NanoRepo/releases/download/iso-release/nanoos-gaming-2026.11.15-beta21-x86_64.iso.part-01"
+        "url": "https://github.com/falconediz911-stack/NanoRepo/releases/download/iso-release/nanoos-gaming-2026.11.15-x86_64.iso.part-01"
       },
       {
-        "name": "nanoos-gaming-2026.11.15-beta21-x86_64.iso.part-02",
+        "name": "nanoos-gaming-2026.11.15-x86_64.iso.part-02",
         "size": 1051385856,
         "sha256": "9ab0cb4d6b28d60a717ee0c21c5e466fc9ccd281987257575e192f2370fa838a",
-        "url": "https://github.com/falconediz911-stack/NanoRepo/releases/download/iso-release/nanoos-gaming-2026.11.15-beta21-x86_64.iso.part-02"
+        "url": "https://github.com/falconediz911-stack/NanoRepo/releases/download/iso-release/nanoos-gaming-2026.11.15-x86_64.iso.part-02"
       }
     ],
     "sha256sums_url": "https://github.com/falconediz911-stack/NanoRepo/releases/download/iso-release/SHA256SUMS"
