@@ -17,12 +17,14 @@ SPEC.loader.exec_module(source_events)
 
 
 class SourceEventValidationTests(unittest.TestCase):
-    def test_registered_iso_event_is_metadata_only(self) -> None:
-        result = source_events.validate_event(
-            "nanoos.iso.published",
-            "falconediz911-stack/NanoOS-Beta21-ISO",
-        )
-        self.assertIn("metadata-only", result)
+    def test_iso_event_from_removed_iso_repository_is_rejected(self) -> None:
+        # ISOs are published by NanoRepo itself (release iso-release and
+        # latest.json on the nanoos-iso branch); the old ISO repo is gone.
+        with self.assertRaises(ValueError):
+            source_events.validate_event(
+                "nanoos.iso.published",
+                "falconediz911-stack/NanoOS-Beta21-ISO",
+            )
 
     def test_registered_website_event_is_metadata_only(self) -> None:
         result = source_events.validate_event(
@@ -50,7 +52,7 @@ class SourceEventValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             source_events.validate_event(
                 "nanoos.tool.source.updated",
-                "falconediz911-stack/NanoOS-Beta21-ISO",
+                "falconediz911-stack/nanoos-website",
                 "nanoos-cpu-info",
             )
 

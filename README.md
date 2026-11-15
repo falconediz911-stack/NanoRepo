@@ -9,7 +9,7 @@ The official package-source and repository-infrastructure project for **NanoOS**
 NanoOS updates are split into two separate paths:
 
 1. **Apps and system tools → Pacman.** A change in a registered source repository triggers NanoRepo. NanoRepo validates the source event, builds the matching Arch package from its PKGBUILD in a disposable Arch container, signs the package and channel database, and publishes to the configured package host. Clients then use `pacman -Syu`.
-2. **ISO releases → NanoOS Update metadata.** Publishing an ISO release sends a separate event to the NanoOS website, which updates `public/releases/iso-latest.json`. An ISO is not a Pacman package. The NanoOS Update client still needs to consume this separate feed.
+2. **ISO releases → NanoOS Update metadata.** ISOs are published by NanoRepo itself: the GitHub Release `iso-release` holds the ISO parts and signed checksums, and `latest.json` on the `nanoos-iso` branch describes the current ISO. An ISO is not a Pacman package. The NanoOS Update client still needs to consume this separate feed.
 
 See [docs/SOURCE-CONNECTIONS.md](docs/SOURCE-CONNECTIONS.md).
 

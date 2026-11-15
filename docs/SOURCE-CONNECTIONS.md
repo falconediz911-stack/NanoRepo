@@ -19,7 +19,7 @@ A package is not installable through Pacman until a real PKGBUILD exists, the pa
 
 ### 2. ISO releases → NanoOS Update feed
 
-An ISO is not a Pacman package. Publishing a new ISO release in `NanoOS-Beta21-ISO` sends a separate metadata event. The website workflow writes `public/releases/iso-latest.json`.
+An ISO is not a Pacman package. ISO releases are published by NanoRepo itself with `tools/nanorepo/publish_iso.py` from the NanoOS ISO profile: the ISO parts, a signed `SHA256SUMS` and `JOIN.txt` go to the GitHub Release `iso-release`, and `latest.json` on the `nanoos-iso` branch describes the current ISO.
 
 NanoOS Update must be taught to read this ISO feed (in addition to its existing app/system update feed) before clients can display or install the new ISO. Publishing metadata alone does not install or update an operating system.
 
@@ -28,7 +28,6 @@ NanoOS Update must be taught to read this ISO feed (in addition to its existing 
 | Repository | Role | Pacman build? |
 |---|---|---|
 | `falconediz911-stack/NanoRepo` | Components and package recipes | Yes, for registered packages |
-| `falconediz911-stack/NanoOS-Beta21-ISO` | ISO release metadata | No |
 | `falconediz911-stack/nanoos-website` | Website/update metadata | No |
 
 Only `nanoos-cpu-info` is currently registered as a NanoRepo component package name. It still needs a reviewed PKGBUILD before it can be built and published.

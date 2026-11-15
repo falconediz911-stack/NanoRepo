@@ -56,7 +56,6 @@ def validate_registry() -> None:
 
     required_sources = {
         "falconediz911-stack/NanoRepo",
-        "falconediz911-stack/NanoOS-Beta21-ISO",
         "falconediz911-stack/nanoos-website",
     }
     missing = required_sources.difference(sources)
