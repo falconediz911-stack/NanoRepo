@@ -32,7 +32,7 @@ APP_NAME = "NanoOS Control Center"
 VERSION = "V2"
 CPU_BOOST = "/usr/local/bin/nanoos-cpu-boost"
 CPU_BOOST_STATE = Path("/etc/nanoos/cpu-boost.conf")
-GAMEMODE_APP = "/usr/share/nanoos-gamemode/nanoos-gamemode.py"
+GAMEMODE_APP = "/usr/bin/nanoos-gamemode"
 WELCOME_APP = "/usr/bin/nanoos-welcome"
 DESKTOP_ID = "org.nanoos.ControlCenter"
 
@@ -61,6 +61,7 @@ GAMING_TOOLS = [
     ("steam", "Steam", "Valve's PC gaming platform."),
     ("gamescope", "Gamescope", "SteamOS-style micro-compositor."),
     ("mangohud", "MangoHud", "Gaming performance overlay."),
+    ("nanoos-gamemode", "NanoOS Game Mode", "Per-game profiles and gaming optimizations."),
     ("gamemode", "GameMode", "Game performance optimization daemon."),
     ("wine", "Wine", "Windows compatibility layer."),
     ("winetricks", "Winetricks", "Helper for Wine environments."),
@@ -485,7 +486,7 @@ class ControlCenter(NanoShell):
         layout.addWidget(ActionCard(
             "NanoOS Game Mode",
             "Per-game performance profiles and gaming optimizations.",
-            "Launch", lambda: self.launch([sys.executable, GAMEMODE_APP], "NanoOS Game Mode"),
+            "Launch", lambda: self.launch([GAMEMODE_APP], "NanoOS Game Mode"),
             enabled=os.path.isfile(GAMEMODE_APP),
         ))
         if os.path.isfile(WELCOME_APP):

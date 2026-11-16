@@ -1,0 +1,7 @@
+#!/usr/bin/python3 -sP
+# nanoos-gamemode, from the nanoos-gamemode package.
+import sys
+sys.path.insert(0, "/usr/lib/nanoos-gamemode")
+sys.path.insert(1, "/usr/lib/nanoos-apps")
+from launcher import run
+run("gamemode.py", "nanoos-gamemode")

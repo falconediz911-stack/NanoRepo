@@ -1,0 +1,21 @@
+# Replace the unpackaged Game Mode copied by older NanoOS installers.
+_nanoos_migrate() {
+  local f
+  for f in /usr/share/applications/nanoos-gamemode.desktop \
+           /usr/share/polkit-1/actions/org.nanoos.gamemode.policy \
+           /usr/local/libexec/nanoos-gamemode-helper \
+           /usr/share/nanoos-gamemode/nanoos-gamemode.py; do
+    if [ -f "$f" ] && ! pacman -Qqo "$f" >/dev/null 2>&1; then
+      rm -f "$f"
+    fi
+  done
+  if [ -d /usr/share/nanoos-gamemode ] && [ -f /usr/share/nanoos-gamemode/nanoos_hardware.py ] &&
+     ! pacman -Qqo /usr/share/nanoos-gamemode/nanoos_hardware.py >/dev/null 2>&1; then
+    ln -sf /usr/lib/nanoos-gamemode/nanoos_hardware.py /usr/share/nanoos-gamemode/nanoos_hardware.py.new &&
+      mv -f /usr/share/nanoos-gamemode/nanoos_hardware.py.new /usr/share/nanoos-gamemode/nanoos_hardware.py
+  fi
+  command -v update-desktop-database >/dev/null && update-desktop-database -q /usr/share/applications || true
+  command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+}
+post_install() { _nanoos_migrate; }
+post_upgrade() { _nanoos_migrate; }

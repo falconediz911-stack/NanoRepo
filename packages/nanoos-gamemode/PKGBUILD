@@ -1,0 +1,28 @@
+# Maintainer: NanoOS Project <https://nanoosproject.org>
+pkgname=nanoos-gamemode
+pkgver=1.1.0
+pkgrel=1
+pkgdesc='NanoOS Game Mode: per-game performance profiles and gaming optimizations'
+arch=('any')
+url='https://nanoosproject.org'
+license=('GPL-3.0-or-later')
+depends=('nanoos-apps' 'python' 'pyside6' 'polkit' 'hicolor-icon-theme')
+optdepends=('gamemode: Feral GameMode daemon' 'mangohud: performance overlay')
+install=nanoos-gamemode.install
+source=(launcher.py gamemode.py nanoos_hardware.py override__init__.py adaptive_ui.py
+        nanoos-gamemode nanoos-gamemode-helper org.nanoos.GameMode.desktop org.nanoos.GameMode.policy nanoos-gamemode.svg)
+sha256sums=('627c488cfcbff97768e934880006dd62acb04339f31693715eb94b3439d132ad' '4d53e461f69fe6961b1e432c06d87102d4da8770a90672bebf62a6cfe4b00fa2' '4f33f4a4abddde9ac75b8688468fff973208237d39f678cc90263367c64d5ee2' '43429ab33490670472fd73eae7ab915cec2e77ac66007ab1a68d9f7c343efd1f' '43f83781c069071efeb4d9724f1c22b2ba39fe0d99052031e7e92a61ecc1eefb' '432b360dbda086b86703dedcbea30a45113b9f091e8d63d22296055b6cf90b2b' 'fe825edb62a0f2db4c85008a147242927525d06c99c573736372152760d452bd' '235c481df1e06867913ae6f5b0e75b9e02dd4be1399721c4c3ab936717c0ef59' '817b3293201c9b476f95dacb288b408daf16da02bb52eaa6db73c72b172641f7' '208daec88561158cfa405b6d15595ddc49646eb610bf4e27cff42f831d973974')
+
+package() {
+  local d="$pkgdir/usr/lib/nanoos-gamemode"
+  install -Dm644 launcher.py "$d/launcher.py"
+  install -Dm644 gamemode.py "$d/gamemode.py"
+  install -Dm755 nanoos_hardware.py "$d/nanoos_hardware.py"
+  install -Dm644 override__init__.py "$d/nanoos_override/__init__.py"
+  install -Dm644 adaptive_ui.py "$d/nanoos_override/adaptive_ui.py"
+  install -Dm755 nanoos-gamemode-helper "$d/nanoos-gamemode-helper"
+  install -Dm755 nanoos-gamemode "$pkgdir/usr/bin/nanoos-gamemode"
+  install -Dm644 org.nanoos.GameMode.desktop "$pkgdir/usr/share/applications/org.nanoos.GameMode.desktop"
+  install -Dm644 org.nanoos.GameMode.policy "$pkgdir/usr/share/polkit-1/actions/org.nanoos.GameMode.policy"
+  install -Dm644 nanoos-gamemode.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/nanoos-gamemode.svg"
+}

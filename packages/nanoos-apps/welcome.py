@@ -142,7 +142,7 @@ class WelcomeWindow(NanoShell):
                  [CONTROL_CENTER]),
                 ("NanoOS Game Mode",
                  "Per-game performance profiles and gaming optimizations.",
-                 [sys.executable, "/usr/share/nanoos-gamemode/nanoos-gamemode.py"]),
+                 ["/usr/bin/nanoos-gamemode"]),
             )
             if Path(program[-1]).is_file()
         ]
@@ -173,6 +173,7 @@ class WelcomeWindow(NanoShell):
         # -------------------------------------------------
 
         gaming = [
+            ("NanoOS Game Mode", "Per-game performance profiles and gaming optimizations.", ["nanoos-gamemode"]),
             ("Steam", "Valve's PC gaming platform.", ["steam"]),
             ("GameMode", "Game performance optimization daemon.", ["gamemode"]),
             ("Gamescope", "SteamOS-style micro-compositor.", ["gamescope"]),

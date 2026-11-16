@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=NanoOS Game Mode
+GenericName=Gaming Performance
+Comment=Per-game performance profiles and gaming optimizations
+Exec=nanoos-gamemode
+Icon=nanoos-gamemode
+Terminal=false
+Categories=Game;Utility;
+Keywords=NanoOS;Gaming;Performance;GameMode;Boost;
+StartupNotify=true
+StartupWMClass=org.nanoos.GameMode

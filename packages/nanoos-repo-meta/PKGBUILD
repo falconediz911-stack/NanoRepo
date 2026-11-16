@@ -1,6 +1,6 @@
 # Maintainer: NanoOS Project
 pkgname=nanoos-repo-meta
-pkgver=2.2
+pkgver=2.3
 pkgrel=1
 pkgdesc="NanoOS package repositories (GitHub-hosted, signed) and repository signing key"
 arch=('any')
@@ -24,7 +24,7 @@ package() {
     : > "$pkgdir/usr/share/pacman/keyrings/nanoos-revoked"
 
     install -Dm644 /dev/stdin "$pkgdir/usr/share/nanoos/repo-info.txt" <<INFO
-NanoOS repositories: nanoos (apps, NanoOS updates) and nanoos-gaming (kernels).
+NanoOS repositories: nanoinstall (NanoOS tools and apps), nanoos (NanoOS updates) and nanoos-gaming (kernels).
 Hosted as signed GitHub release assets: $url/releases
 Configured in /etc/pacman.d/nanoos-repos.conf (included from /etc/pacman.conf).
 Signing key fingerprint: ${_fingerprint}
