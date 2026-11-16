@@ -1,12 +1,12 @@
 # Maintainer: NanoOS Project
 pkgname=nanoos-repo-meta
-pkgver=2.1
+pkgver=2.2
 pkgrel=1
 pkgdesc="NanoOS package repositories (GitHub-hosted, signed) and repository signing key"
 arch=('any')
 url="https://github.com/falconediz911-stack/NanoRepo"
 license=('GPL-2.0-only')
-depends=('pacman' 'nanoos-apps')
+depends=('pacman' 'nanoos-apps' 'nanoos-system')
 backup=('etc/pacman.d/nanoos-repos.conf')
 install=nanoos-repo-meta.install
 source=('nanoos-repos.conf' 'nanoos-repo-signing-2026.key')

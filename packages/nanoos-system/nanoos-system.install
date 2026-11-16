@@ -1,0 +1,95 @@
+# NanoOS system updates: brings existing installs up to the current release.
+# Every step is idempotent and leaves user customisations alone.
+
+_nanoos_edition() {
+  sed -n 's/^NAME="\(.*\)"$/\1/p' /etc/os-release 2>/dev/null | head -1
+}
+
+# 1. Release identity (os-release written by the installer, owned by no package).
+_nanoos_identity() {
+  local f name version
+  name=$(_nanoos_edition)
+  case "$name" in
+    "NanoOS Gaming"|"NanoOS") name="NanoOS Gaming"; version="1.1" ;;
+    "NanoOS Basic") version="1.0" ;;
+    *) return ;;
+  esac
+  for f in /etc/os-release /etc/nanoos-release; do
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    grep -q '^ID=nanoos$' "$f" || continue
+    sed -i -e "s/^NAME=.*/NAME=\"$name\"/" \
+           -e "s/^PRETTY_NAME=.*/PRETTY_NAME=\"$name $version\"/" \
+           -e "s/^VERSION=.*/VERSION=\"$version\"/" \
+           -e "s/^VERSION_ID=.*/VERSION_ID=\"$version\"/" "$f"
+  done
+}
+
+# 2. Dual boot with Windows: hardware clock in local time.
+_nanoos_windows_clock() {
+  grep -qx 'LOCAL' /etc/adjtime 2>/dev/null && return
+  local windows=0 esp
+  efibootmgr 2>/dev/null | grep -q 'Windows Boot Manager' && windows=1
+  for esp in /boot/efi /boot /efi; do
+    [ -f "$esp/EFI/Microsoft/Boot/bootmgfw.efi" ] && windows=1
+  done
+  [ "$windows" = 1 ] || return
+  hwclock --systohc --localtime 2>/dev/null &&
+    echo ":: NanoOS: Windows found, hardware clock now in local time."
+}
+
+# 3. Fast, up-to-date mirrors.
+_nanoos_mirrors() {
+  local conf=/etc/xdg/reflector/reflector.conf
+  if ! grep -q 'NanoOS' "$conf" 2>/dev/null; then
+    mkdir -p /etc/xdg/reflector
+    printf '%s\n' '# NanoOS: keep the 10 fastest, recently synced HTTPS mirrors.' \
+      '--protocol https' '--age 12' '--latest 20' '--sort rate' '--number 10' \
+      '--save /etc/pacman.d/mirrorlist' > "$conf"
+  fi
+  systemctl enable reflector.timer >/dev/null 2>&1
+  if [ "$(grep -c '^Server' /etc/pacman.d/mirrorlist 2>/dev/null)" -gt 50 ]; then
+    systemctl start --no-block reflector.service >/dev/null 2>&1 || true
+  fi
+}
+
+# 4. pacman: 10 parallel downloads.
+_nanoos_pacman() {
+  local conf=/etc/pacman.conf
+  grep -q '^ParallelDownloads = 10$' "$conf" && return
+  if grep -q '^#\?ParallelDownloads' "$conf"; then
+    sed -i 's/^#\?ParallelDownloads.*/ParallelDownloads = 10/' "$conf"
+  else
+    sed -i '/^\[options\]/a ParallelDownloads = 10' "$conf"
+  fi
+}
+
+# 5. Preconfigured zsh: default for new users; existing users on plain bash
+#    without their own ~/.zshrc get the NanoOS zsh too.
+_nanoos_zsh() {
+  local rc=/usr/share/nanoos-system/zshrc user home shell
+  [ -f /etc/skel/.zshrc ] || install -Dm644 "$rc" /etc/skel/.zshrc
+  if grep -q '^SHELL=' /etc/default/useradd 2>/dev/null; then
+    sed -i 's|^SHELL=.*|SHELL=/usr/bin/zsh|' /etc/default/useradd
+  else
+    echo 'SHELL=/usr/bin/zsh' >> /etc/default/useradd
+  fi
+  while IFS=: read -r user _ uid _ _ home shell; do
+    [ "$uid" -ge 1000 ] && [ "$uid" -lt 60000 ] && [ -d "$home" ] || continue
+    case "$shell" in /bin/bash|/usr/bin/bash) ;; *) continue ;; esac
+    [ -e "$home/.zshrc" ] && continue
+    install -m644 -o "$user" -g "$(id -gn "$user")" "$rc" "$home/.zshrc"
+    usermod -s /usr/bin/zsh "$user" &&
+      echo ":: NanoOS: $user now uses the NanoOS zsh (log out and back in)."
+  done < /etc/passwd
+}
+
+_nanoos_update() {
+  _nanoos_identity
+  _nanoos_windows_clock
+  _nanoos_mirrors
+  _nanoos_pacman
+  _nanoos_zsh
+}
+
+post_install() { _nanoos_update; }
+post_upgrade() { _nanoos_update; }

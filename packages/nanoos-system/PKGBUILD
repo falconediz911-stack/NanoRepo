@@ -1,0 +1,17 @@
+# Maintainer: NanoOS Project <https://nanoosproject.org>
+pkgname=nanoos-system
+pkgver=1.1.0
+pkgrel=1
+pkgdesc='NanoOS system updates: release identity, dual-boot clock, fast mirrors, pacman tuning, preconfigured zsh'
+arch=('any')
+url='https://nanoosproject.org'
+license=('GPL-3.0-or-later')
+depends=('reflector' 'efibootmgr' 'util-linux' 'fastfetch'
+         'zsh' 'zsh-autosuggestions' 'zsh-syntax-highlighting' 'zsh-completions')
+install=nanoos-system.install
+source=('nanoos.zshrc')
+sha256sums=('e808d08ad69e5b00cf567b371b16f5d85f8df878b57d0fc9c1116f7407c4adb9')
+
+package() {
+  install -Dm644 nanoos.zshrc "$pkgdir/usr/share/nanoos-system/zshrc"
+}
