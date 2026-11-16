@@ -1,0 +1,28 @@
+# Before this package, the installer copied Welcome and Control Center into
+# /usr/local and /usr/share/applications without a package owning them.
+# Replace those copies so there is one menu entry per app and old links keep working.
+_nanoos_migrate() {
+  local f
+  for f in /usr/share/applications/nanoos-welcome.desktop /usr/share/applications/nanoos-control-center.desktop; do
+    if [ -f "$f" ] && ! pacman -Qqo "$f" >/dev/null 2>&1; then
+      rm -f "$f"
+    fi
+  done
+  local pair old new
+  for pair in "nanoos-welcome.py:nanoos-welcome" "nanoos-control-center:nanoos-control-center"; do
+    old=/usr/local/bin/${pair%%:*}; new=/usr/bin/${pair##*:}
+    if [ -f "$old" ] && [ ! -L "$old" ] && ! pacman -Qqo "$old" >/dev/null 2>&1; then
+      rm -f "$old" && ln -s "$new" "$old"
+    fi
+  done
+  command -v update-desktop-database >/dev/null && update-desktop-database -q /usr/share/applications || true
+  command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+}
+
+post_install() {
+  _nanoos_migrate
+}
+
+post_upgrade() {
+  _nanoos_migrate
+}

@@ -1,0 +1,6 @@
+*.pkg.tar.zst
+src/
+pkg/
+/out-packages/
+/out-repo/
+__pycache__/

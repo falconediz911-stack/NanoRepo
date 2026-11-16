@@ -1,0 +1,31 @@
+# Maintainer: NanoOS Project <https://nanoosproject.org>
+pkgname=nanoos-apps
+pkgver=2.1.0
+pkgrel=1
+pkgdesc='NanoOS Welcome and NanoOS Control Center'
+arch=('any')
+url='https://nanoosproject.org'
+license=('GPL-3.0-or-later')
+depends=('python' 'pyside6' 'qt6-svg' 'polkit' 'hicolor-icon-theme')
+install=nanoos-apps.install
+source=(
+  launcher.py welcome.py control_center.py
+  nanoos_ui.py nanoos_theme.py nanoos_platform.py
+  nanoos-welcome nanoos-control-center
+  org.nanoos.Welcome.desktop org.nanoos.ControlCenter.desktop
+  nanoos-welcome.svg nanoos-control-center.svg
+)
+sha256sums=('0f0aa7d4b2e7b21fec4f61ab3d6b835a5a87652defc5f8d442c0cfee02a29f74' 'ffaab1e6952a26cb1975c48a1985c48e5b8be1a2a1972721584ed739c406f261' '34b07cd50d62ac0f3de77fd5244ec5276673ec98bccde2cc9c0744a065d21269' '841c37c75c857c7fb0a72a81f5769ea38220ce82cd6b7a1a57b667ff6577acbc' '8e2e9e2f0ef01dead9aed138a3147100a5970a5551e21e9e7be1f5a4061eb263' 'e5a84386e0bb5cd9774e5b19fc272d6d77c9acfb0806eeac182c827e6db75948' 'cfdab3b6da95c5f4476a8ce70f227f35991544d38c0222a77191c90fb7d6aa84' '95d5088308f429d86861866b8db1458139855b3c40d96884448f25ae15f808b1' 'cfdd184773a30a5e5a5e7e79d70aff91e1d56d2ae1aaae0f856f5fb0704ee5de' 'a01153c26e997558c4326b24d84f2c3abf51d44b5982143000bb637ae02cc024' 'ca4ec9e70c223c45e50bf60c24f11bdb1c391d53f5ab636f29371763fabf2e7d' 'c72e225cb07e988e712453bec23e1ccc71070b163a426f40c884de9746e7dcf6')
+
+package() {
+  local f
+  for f in launcher.py welcome.py control_center.py nanoos_ui.py nanoos_theme.py nanoos_platform.py; do
+    install -Dm644 "$f" "$pkgdir/usr/lib/nanoos-apps/$f"
+  done
+  install -Dm755 nanoos-welcome "$pkgdir/usr/bin/nanoos-welcome"
+  install -Dm755 nanoos-control-center "$pkgdir/usr/bin/nanoos-control-center"
+  install -Dm644 org.nanoos.Welcome.desktop "$pkgdir/usr/share/applications/org.nanoos.Welcome.desktop"
+  install -Dm644 org.nanoos.ControlCenter.desktop "$pkgdir/usr/share/applications/org.nanoos.ControlCenter.desktop"
+  install -Dm644 nanoos-welcome.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/nanoos-welcome.svg"
+  install -Dm644 nanoos-control-center.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/nanoos-control-center.svg"
+}

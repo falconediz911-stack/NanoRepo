@@ -13,4 +13,4 @@ gh secret set NANOREPO_GPG_PRIVATE_KEY_B64 -R falconediz911-stack/NanoRepo \
   --body "$(GNUPGHOME=~/.local/share/nanorepo-signing/gnupg gpg --export-secret-keys --armor D35A46A77EDBFD4F069B71ACB329E36F597CD358 | base64 -w0)"
 ```
 
-Status: empty, no packages yet.
+Status: `nanoos-apps` (NanoOS Welcome + Control Center, 2.1.0) and `nanoos-repo-meta` (2.1, pulls in nanoos-apps) are published in `[nanoos]`. CI publishing is still off (no signing secret); they were built and signed locally with `publish-apps.py`.

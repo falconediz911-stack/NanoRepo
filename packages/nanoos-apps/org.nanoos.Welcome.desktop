@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=NanoOS Welcome
+GenericName=Welcome and Setup
+Comment=Set up NanoOS: kernels, software, desktops and more
+Exec=nanoos-welcome
+Icon=nanoos-welcome
+Terminal=false
+Categories=System;Settings;
+Keywords=NanoOS;Welcome;Setup;Install;Kernel;Software;
+StartupNotify=true
+StartupWMClass=org.nanoos.Welcome

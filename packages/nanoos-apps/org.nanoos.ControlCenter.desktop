@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=NanoOS Control Center
+GenericName=System Settings
+Comment=NanoOS hardware, CPU Boost, storage, snapshots, updates and boot details
+Exec=nanoos-control-center
+Icon=nanoos-control-center
+Terminal=false
+Categories=System;Settings;
+Keywords=NanoOS;Hardware;Kernel;Gaming;Recovery;Updates;
+StartupNotify=true
+StartupWMClass=org.nanoos.ControlCenter

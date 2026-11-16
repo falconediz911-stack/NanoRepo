@@ -1,0 +1,6 @@
+#!/usr/bin/python3 -sP
+# nanoos-control-center, from the nanoos-apps package.
+import sys
+sys.path.insert(0, "/usr/lib/nanoos-apps")
+from launcher import run
+run("control_center.py", "nanoos-control-center")

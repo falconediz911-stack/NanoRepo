@@ -1,0 +1,12 @@
+# Trust the NanoOS repository signing key in pacman's keyring.
+_populate() {
+    if [ -d /etc/pacman.d/gnupg ]; then
+        pacman-key --populate nanoos >/dev/null 2>&1 \
+            && echo ":: NanoOS repository key trusted." \
+            || echo ":: Run 'pacman-key --populate nanoos' to trust the NanoOS key."
+    else
+        echo ":: Pacman keyring not initialised; run 'pacman-key --init && pacman-key --populate nanoos'."
+    fi
+}
+post_install() { _populate; }
+post_upgrade() { _populate; }

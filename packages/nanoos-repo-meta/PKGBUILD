@@ -1,0 +1,32 @@
+# Maintainer: NanoOS Project
+pkgname=nanoos-repo-meta
+pkgver=2.1
+pkgrel=1
+pkgdesc="NanoOS package repositories (GitHub-hosted, signed) and repository signing key"
+arch=('any')
+url="https://github.com/falconediz911-stack/NanoRepo"
+license=('GPL-2.0-only')
+depends=('pacman' 'nanoos-apps')
+backup=('etc/pacman.d/nanoos-repos.conf')
+install=nanoos-repo-meta.install
+source=('nanoos-repos.conf' 'nanoos-repo-signing-2026.key')
+sha256sums=('SKIP' 'SKIP')
+
+_fingerprint=D35A46A77EDBFD4F069B71ACB329E36F597CD358
+
+package() {
+    install -Dm644 nanoos-repos.conf "$pkgdir/etc/pacman.d/nanoos-repos.conf"
+
+    # pacman-key --populate nanoos reads these three files.
+    install -dm755 "$pkgdir/usr/share/pacman/keyrings"
+    gpg --dearmor < nanoos-repo-signing-2026.key > "$pkgdir/usr/share/pacman/keyrings/nanoos.gpg"
+    echo "${_fingerprint}:4:" > "$pkgdir/usr/share/pacman/keyrings/nanoos-trusted"
+    : > "$pkgdir/usr/share/pacman/keyrings/nanoos-revoked"
+
+    install -Dm644 /dev/stdin "$pkgdir/usr/share/nanoos/repo-info.txt" <<INFO
+NanoOS repositories: nanoos (apps, NanoOS updates) and nanoos-gaming (kernels).
+Hosted as signed GitHub release assets: $url/releases
+Configured in /etc/pacman.d/nanoos-repos.conf (included from /etc/pacman.conf).
+Signing key fingerprint: ${_fingerprint}
+INFO
+}
