@@ -1,12 +1,12 @@
 # Maintainer: NanoOS Project <https://nanoosproject.org>
 pkgname=nanoos-apps
-pkgver=2.1.1
+pkgver=2.2.0
 pkgrel=1
 pkgdesc='NanoOS Welcome and NanoOS Control Center'
 arch=('any')
 url='https://nanoosproject.org'
 license=('GPL-3.0-or-later')
-depends=('python' 'pyside6' 'qt6-svg' 'polkit' 'hicolor-icon-theme')
+depends=('python' 'pyside6' 'qt6-svg' 'polkit' 'hicolor-icon-theme' 'reflector' 'efibootmgr')
 install=nanoos-apps.install
 source=(
   launcher.py welcome.py control_center.py

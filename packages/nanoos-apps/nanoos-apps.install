@@ -33,12 +33,51 @@ _nanoos_release_identity() {
   done
 }
 
+# Dual boot with Windows: Windows keeps the hardware clock in local time, so a
+# UTC clock on NanoOS made the time jump by the UTC offset after every switch.
+_nanoos_windows_clock() {
+  grep -qx 'LOCAL' /etc/adjtime 2>/dev/null && return
+  local windows=0
+  if command -v efibootmgr >/dev/null && efibootmgr 2>/dev/null | grep -q 'Windows Boot Manager'; then
+    windows=1
+  fi
+  for esp in /boot/efi /boot /efi; do
+    [ -f "$esp/EFI/Microsoft/Boot/bootmgfw.efi" ] && windows=1
+  done
+  [ "$windows" = 1 ] || return
+  hwclock --systohc --localtime 2>/dev/null &&
+    echo ":: NanoOS: Windows found, hardware clock now in local time (no more time jumps)."
+}
+
+# Fast, up-to-date mirrors instead of all ~425 Arch mirrors in list order.
+_nanoos_mirrors() {
+  local conf=/etc/xdg/reflector/reflector.conf
+  if ! grep -q 'NanoOS' "$conf" 2>/dev/null; then
+    mkdir -p /etc/xdg/reflector
+    cat > "$conf" <<'CONF'
+# NanoOS: keep the 10 fastest, recently synced HTTPS mirrors.
+--protocol https
+--age 12
+--latest 20
+--sort rate
+--number 10
+--save /etc/pacman.d/mirrorlist
+CONF
+  fi
+  systemctl enable reflector.timer >/dev/null 2>&1
+  systemctl start --no-block reflector.service >/dev/null 2>&1 || true
+}
+
 post_install() {
   _nanoos_migrate
   _nanoos_release_identity
+  _nanoos_windows_clock
+  _nanoos_mirrors
 }
 
 post_upgrade() {
   _nanoos_migrate
   _nanoos_release_identity
+  _nanoos_windows_clock
+  _nanoos_mirrors
 }
