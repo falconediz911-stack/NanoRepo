@@ -19,10 +19,26 @@ _nanoos_migrate() {
   command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
 }
 
+# Installs from the first ISOs wrote NAME="NanoOS" / VERSION="Beta 21".
+# Those were NanoOS Gaming installs: give them the released identity.
+_nanoos_release_identity() {
+  local f
+  for f in /etc/os-release /etc/nanoos-release; do
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    grep -qx 'VERSION_ID="beta21"' "$f" && grep -qx 'NAME="NanoOS"' "$f" || continue
+    sed -i -e 's/^NAME="NanoOS"$/NAME="NanoOS Gaming"/' \
+           -e 's/^PRETTY_NAME="NanoOS"$/PRETTY_NAME="NanoOS Gaming 1.0.1"/' \
+           -e 's/^VERSION="Beta 21"$/VERSION="1.0.1"/' \
+           -e 's/^VERSION_ID="beta21"$/VERSION_ID="1.0.1"/' "$f"
+  done
+}
+
 post_install() {
   _nanoos_migrate
+  _nanoos_release_identity
 }
 
 post_upgrade() {
   _nanoos_migrate
+  _nanoos_release_identity
 }

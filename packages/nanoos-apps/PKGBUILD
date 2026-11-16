@@ -1,6 +1,6 @@
 # Maintainer: NanoOS Project <https://nanoosproject.org>
 pkgname=nanoos-apps
-pkgver=2.1.0
+pkgver=2.1.1
 pkgrel=1
 pkgdesc='NanoOS Welcome and NanoOS Control Center'
 arch=('any')
