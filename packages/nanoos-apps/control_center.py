@@ -60,6 +60,9 @@ CPU_MODES = [
     ("gaming", "Gaming", "Maximum boost hint for the lowest frame times."),
 ]
 
+ZEN_NAMES = {"zen": "AMD Zen", "zen2": "AMD Zen 2", "zen3": "AMD Zen 3",
+             "zen4": "AMD Zen 4", "zen5": "AMD Zen 5"}
+
 GAMING_TOOLS = [
     ("steam", "Steam", "Valve's PC gaming platform."),
     ("gamescope", "Gamescope", "SteamOS-style micro-compositor."),
@@ -297,6 +300,10 @@ def collect_report():
         "firmware": platform_api.firmware(),
         "cpu": platform_api.cpu_info(),
         "cpu_profile": platform_api.cpu_profile()["profile"],
+        "x3d_mode": platform_api.read_file(
+            next((str(p) for p in Path("/sys/bus/platform/drivers/amd_x3d_vcache").glob("*/amd_x3d_mode")), "")
+        ).strip() if Path("/sys/bus/platform/drivers/amd_x3d_vcache").is_dir() else "",
+        "prefcore": platform_api.read_file("/sys/devices/system/cpu/amd_pstate/prefcore").strip(),
         "gpus": gpu_summary(platform_api.gpu_info()),
         "storage": platform_api.storage_info(),
         "kernel": platform_api.kernel_status(),
@@ -616,8 +623,9 @@ class ControlCenter(NanoShell):
         layout.addWidget(self.group_label("Hardware"))
         cpu = r["cpu"]
         self.info(layout, "Processor",
-                  f"{cpu.get('model', 'Unknown')}  ·  {cpu.get('architecture', '')}  ·  "
-                  f"tuning profile: {r['cpu_profile']}", icon="preferences-devices-cpu")
+                  f"{cpu.get('model', 'Unknown')}  ·  {cpu.get('architecture', '')}"
+                  + (f"  ·  {ZEN_NAMES[r['cpu_profile']]}" if r['cpu_profile'] in ZEN_NAMES else ""),
+                  icon="preferences-devices-cpu")
         gpus = self.ranked_gpus(r)
         self.info(layout, "Graphics", "   ·   ".join(
             f"{name} (driver: {driver})" if driver else name for name, driver in gpus)
@@ -705,11 +713,37 @@ class ControlCenter(NanoShell):
         self.info(layout, "Scheduler",
                   ("sched_ext ready" if sched.get("sched_ext_available") else "Default (EEVDF)")
                   + f"  ·  scx_loader: {sched.get('scx_loader', 'unknown')}")
-        self.info(layout, "CPU tuning",
-                  "Zen 5 optimized builds (znver5)" if r["cpu_profile"] == "zen5"
-                  else "Generic x86-64 builds")
+        zen = ZEN_NAMES.get(r["cpu_profile"])
+        tuning = [f"{zen} detected" if zen else "Generic x86-64 CPU"]
+        if r.get("prefcore") == "enabled":
+            tuning.append("preferred-core ranking on (fastest cores first)")
+        self.info(layout, "CPU tuning", "  ·  ".join(tuning), icon="preferences-devices-cpu")
+        if r.get("x3d_mode"):
+            cache = r["x3d_mode"] == "cache"
+            card = ActionCard(
+                "X3D V-Cache",
+                ("Games and apps prefer the cores with the 3D V-Cache." if cache else
+                 "Apps prefer the higher-clocked cores. NanoOS Game Mode switches to the "
+                 "V-Cache cores automatically while a game runs.")
+                + "  ·  Until restart.",
+                "Prefer clock speed" if cache else "Prefer V-Cache",
+                lambda: self.set_x3d_mode("frequency" if cache else "cache"),
+                enabled=not r["live"], icon="media-flash",
+            )
+            card.set_badge("V-Cache" if cache else "Clock speed", "ok" if cache else "info")
+            layout.addWidget(card)
         layout.addStretch(1)
         self.add_page("Performance", page)
+
+    def set_x3d_mode(self, mode):
+        helper = "/usr/lib/nanoos-gamemode/nanoos-gamemode-helper"
+        title = "X3D: " + ("V-Cache cores" if mode == "cache" else "clock speed")
+        if os.path.isfile(helper):
+            self.run_privileged([helper, "x3d", mode], title, verb="Applying")
+        else:
+            script = ("for f in /sys/bus/platform/drivers/amd_x3d_vcache/*/amd_x3d_mode; "
+                      f"do echo {mode} > \"$f\"; done")
+            self.run_privileged(["/bin/sh", "-c", script], title, verb="Applying")
 
     def apply_cpu_mode(self, key, title):
         # One authorization: apply + save the mode, and make sure the boot

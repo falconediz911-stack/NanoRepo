@@ -33,6 +33,7 @@ STEAM_ROOTS = [
 # Steam tools that also run under reaper but are not games.
 NOT_GAMES = re.compile(r"proton|steam linux runtime|steamworks common|steamvr", re.I)
 BOOST = Path("/sys/devices/system/cpu/cpufreq/boost")
+X3D_MODES = sorted(Path("/sys/bus/platform/drivers/amd_x3d_vcache").glob("*/amd_x3d_mode"))
 
 
 def log(message):
@@ -104,6 +105,13 @@ def helper(*operations):
     return result.returncode == 0
 
 
+def read_x3d():
+    try:
+        return X3D_MODES[0].read_text().strip() if X3D_MODES else None
+    except OSError:
+        return None
+
+
 def read_boost():
     try:
         return BOOST.read_text().strip()
@@ -135,7 +143,7 @@ class Watcher:
                 self.ini_before = core.GAMEMODE_CONFIG.read_text(encoding="utf-8")
             except OSError:
                 self.ini_before = None
-            self.restore = {"boost": read_boost()}
+            self.restore = {"boost": read_boost(), "x3d": read_x3d()}
         try:
             core.GAMEMODE_CONFIG.parent.mkdir(parents=True, exist_ok=True)
             core.GAMEMODE_CONFIG.write_text(core.render_gamemode_ini(state, profile), encoding="utf-8")
@@ -148,6 +156,9 @@ class Watcher:
         if state.get("gpu_performance", True) and profile != "Balanced":
             operations.append("gpu=on")
             self.restore["gpu"] = True
+        if read_x3d() == "frequency" and profile != "Balanced" and state.get("x3d_cache", True):
+            # Dual-CCD X3D CPU: run the game on the 3D V-Cache cores.
+            operations.append("x3d=cache")
         helper(*operations)
 
         registered = None
@@ -173,6 +184,8 @@ class Watcher:
             operations.append("boost=0")
         if restore.get("gpu"):
             operations.append("gpu=off")
+        if restore.get("x3d") and restore["x3d"] != read_x3d():
+            operations.append(f"x3d={restore['x3d']}")
         helper(*operations)
         if self.ini_before is not None:
             # Put back the configuration of the profile chosen in the app.

@@ -116,36 +116,44 @@ def cpu_info():
     return data
 
 
+def _cpuinfo_numbers():
+    """(vendor, family, model) of the first CPU from /proc/cpuinfo."""
+    vendor, family, model = "", -1, -1
+    for line in read_file("/proc/cpuinfo").splitlines():
+        key, _, value = line.partition(":")
+        key, value = key.strip(), value.strip()
+        if key == "vendor_id" and not vendor:
+            vendor = value
+        elif key == "cpu family" and family < 0 and value.isdigit():
+            family = int(value)
+        elif key == "model" and model < 0 and value.isdigit():
+            model = int(value)
+        if vendor and family >= 0 and model >= 0:
+            break
+    return vendor, family, model
+
+
 def cpu_profile():
+    """AMD Zen generation of this CPU. NanoOS packages and kernels are
+    built for every x86-64 CPU; this only drives Zen-specific tuning
+    (preferred cores, X3D cache mode) and what Control Center shows."""
     info = cpu_info()
-
-    family = str(
-        info.get("family")
-        or ""
-    )
-
-    model = str(
-        info.get("model")
-        or ""
-    ).lower()
-
-    # AMD Family 1Ah / Zen 5 detection.
-    is_zen5 = (
-        family in ("26", "0x1a")
-        or "zen 5" in model
-        or "zen5" in model
-    )
-
-    if is_zen5:
-        return {
-            "profile": "zen5",
-            "compiler_target": "znver5",
-            "architecture": info,
-        }
-
+    vendor, family, model = _cpuinfo_numbers()
+    profile = "generic"
+    if vendor == "AuthenticAMD":
+        if family == 0x1A:
+            profile = "zen5"
+        elif family == 0x19:
+            # Family 19h covers Zen 3 and Zen 4; Zen 4 models per AMD's
+            # revision guides (Raphael, Phoenix, Genoa, Dragon Range …).
+            zen4 = (0x10 <= model <= 0x1F or 0x60 <= model <= 0x7F
+                    or 0xA0 <= model <= 0xAF)
+            profile = "zen4" if zen4 else "zen3"
+        elif family == 0x17:
+            profile = "zen2" if model >= 0x30 else "zen"
     return {
-        "profile": "generic",
-        "compiler_target": "native",
+        "profile": profile,
+        "x3d": bool(list(Path("/sys/bus/platform/drivers/amd_x3d_vcache").glob("*/amd_x3d_mode"))),
         "architecture": info,
     }
 

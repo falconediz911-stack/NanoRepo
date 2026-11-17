@@ -9,6 +9,7 @@ Usage: nanoos-gamemode-helper <operation> <value>
   epp       <name>                    energy/performance preference, all policies
   platform  <name>                    ACPI platform profile
   gpu       on|off                    NVIDIA persistence mode / amdgpu power level
+  x3d       cache|frequency           AMD X3D: prefer the 3D V-Cache or the faster CCD
   batch     op=value [op=value ...]   several of the above in one call
 
 Every value is checked against what the kernel advertises; nothing else
@@ -27,6 +28,7 @@ INTEL_NO_TURBO = CPU / "intel_pstate/no_turbo"
 PLATFORM_PROFILE = Path("/sys/firmware/acpi/platform_profile")
 PLATFORM_CHOICES = Path("/sys/firmware/acpi/platform_profile_choices")
 TOKEN = re.compile(r"[a-z0-9_-]{1,40}")
+X3D_DRIVER = Path("/sys/bus/platform/drivers/amd_x3d_vcache")
 
 
 def fail(message, code=1):
@@ -113,6 +115,17 @@ def apply(operation, value):
                 pass  # some cards expose the file but reject manual levels
         if not done:
             fail("No supported GPU performance control was found.")
+
+    elif operation == "x3d":
+        # Dual-CCD X3D CPUs (7950X3D, 9950X3D, …): "cache" makes the
+        # scheduler prefer the CCD with the 3D V-Cache, best for games.
+        if value not in {"cache", "frequency"}:
+            fail("x3d expects cache or frequency.", 2)
+        controls = sorted(X3D_DRIVER.glob("*/amd_x3d_mode"))
+        if not controls:
+            fail("This CPU has no AMD X3D cache mode control.")
+        for control in controls:
+            control.write_text(value)
 
     else:
         fail(f"Unknown operation: {operation}", 2)
