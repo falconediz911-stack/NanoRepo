@@ -17,5 +17,18 @@ _nanoos_migrate() {
   command -v update-desktop-database >/dev/null && update-desktop-database -q /usr/share/applications || true
   command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
 }
-post_install() { _nanoos_migrate; }
-post_upgrade() { _nanoos_migrate; }
+# Automatic game profiles: on for every user once (new installs and the
+# upgrade that introduces them); turning it off in the app is kept.
+_nanoos_enable_watch() {
+  systemctl --global enable nanoos-gamemode-watch.service >/dev/null 2>&1 || true
+  echo ":: NanoOS Game Mode: automatic game profiles start with your next login."
+}
+post_install() { _nanoos_migrate; _nanoos_enable_watch; }
+post_upgrade() {
+  _nanoos_migrate
+  [ "$(vercmp "$2" 1.2.0)" -lt 0 ] && _nanoos_enable_watch
+  true
+}
+pre_remove() {
+  systemctl --global disable nanoos-gamemode-watch.service >/dev/null 2>&1 || true
+}

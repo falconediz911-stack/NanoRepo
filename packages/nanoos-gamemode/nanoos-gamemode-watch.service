@@ -1,0 +1,14 @@
+[Unit]
+Description=NanoOS Game Mode: automatic per-game profiles
+Documentation=https://nanoosproject.org
+
+[Service]
+ExecStart=/usr/lib/nanoos-gamemode/nanoos-gamemode-watch
+Restart=on-failure
+RestartSec=5
+# A few MB of RAM, a /proc scan every 3 s; never compete with the game.
+Nice=10
+MemoryMax=64M
+
+[Install]
+WantedBy=default.target

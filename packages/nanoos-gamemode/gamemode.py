@@ -400,7 +400,8 @@ class NanoOSCompactTabSelector(QComboBox):
 
 
 APP_NAME = "NanoOS GameMode"
-VERSION = "V2"
+VERSION = "2.0"
+WATCH_SERVICE = "nanoos-gamemode-watch.service"
 
 CONFIG_DIR = Path.home() / ".config" / "nanoos"
 STATE_FILE = CONFIG_DIR / "gamemode.json"
@@ -409,35 +410,9 @@ GAMEMODE_CONFIG_DIR = Path.home() / ".config"
 GAMEMODE_CONFIG = GAMEMODE_CONFIG_DIR / "gamemode.ini"
 GAMEMODE_BACKUP = GAMEMODE_CONFIG_DIR / "gamemode.ini.nanoos-backup"
 
-PROFILE_DATA = {
-    "Balanced": {
-        "desiredgov": "powersave",
-        "desiredprof": "balanced",
-        "desired_epp": "balance_performance",
-        "desired_platform": "balanced",
-        "renice": "0",
-        "ioprio": "off",
-        "softrealtime": "off",
-    },
-    "Performance": {
-        "desiredgov": "performance",
-        "desiredprof": "performance",
-        "desired_epp": "performance",
-        "desired_platform": "performance",
-        "renice": "5",
-        "ioprio": "0",
-        "softrealtime": "off",
-    },
-    "Gaming": {
-        "desiredgov": "performance",
-        "desiredprof": "performance",
-        "desired_epp": "performance",
-        "desired_platform": "performance",
-        "renice": "10",
-        "ioprio": "0",
-        "softrealtime": "off",
-    },
-}
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import nanoos_gamemode_core as gamemode_core  # noqa: E402
+from nanoos_gamemode_core import PROFILE_DATA  # noqa: E402
 
 DEFAULT_STATE = {
     "gamemode": False,
@@ -2068,9 +2043,10 @@ class NanoOSGameMode(QMainWindow):
         summary_text.addWidget(eyebrow)
 
         summary_subtitle = QLabel(
-            "Pick a profile for a game. When you launch it from NanoOS "
-            "GameMode, that profile is applied and GameMode is switched "
-            "on first. Games set to Default use your current profile."
+            "Pick a profile for a game. With automatic game profiles on, "
+            "a Steam game gets its profile (Auto = Ultra) and GameMode the "
+            "moment it starts, even when you press Play in Steam, and "
+            "everything goes back when it closes."
         )
         summary_subtitle.setObjectName("muted")
         summary_subtitle.setWordWrap(True)
@@ -2079,6 +2055,18 @@ class NanoOSGameMode(QMainWindow):
 
         self.games_count_label = QLabel("0 GAMES")
         self.games_count_label.setObjectName("statusPill")
+        self.auto_profiles_toggle = QCheckBox("Automatic game profiles")
+        self.auto_profiles_toggle.setObjectName("autoProfiles")
+        self.auto_profiles_toggle.setChecked(bool(self.state.get("auto_profiles", True)))
+        self.auto_profiles_toggle.setToolTip(
+            "Apply each game's profile and GameMode automatically when a "
+            "Steam game starts."
+        )
+        self.auto_profiles_toggle.toggled.connect(self._nanoos_set_auto_profiles)
+        summary_layout.addWidget(
+            self.auto_profiles_toggle, 0, Qt.AlignmentFlag.AlignVCenter
+        )
+        summary_layout.addSpacing(12)
         summary_layout.addWidget(
             self.games_count_label, 0, Qt.AlignmentFlag.AlignVCenter
         )
@@ -2157,6 +2145,7 @@ class NanoOSGameMode(QMainWindow):
             choices.addWidget(button, 1)
         detail_layout.addLayout(choices)
 
+        self._nanoos_update_auto_button()
         self.games_launch_button = QPushButton("LAUNCH WITH PROFILE")
         self.games_launch_button.setObjectName("primaryAction")
         self.games_launch_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -2175,6 +2164,36 @@ class NanoOSGameMode(QMainWindow):
         )
         self._nanoos_per_game_selection_changed(None)
         return page
+
+    def _nanoos_set_auto_profiles(self, enabled):
+        self.state["auto_profiles"] = bool(enabled)
+        try:
+            save_state(self.state)
+        except OSError as exc:
+            self.show_error("Automatic game profiles", str(exc))
+            return
+        # The watcher service does the work; run it only while enabled.
+        if shutil.which("systemctl"):
+            subprocess.Popen(
+                ["systemctl", "--user", "enable" if enabled else "disable", "--now", WATCH_SERVICE],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        self._nanoos_update_auto_button()
+        self.refresh_per_game_page()
+        self._nanoos_per_game_selection_changed(self.games_list.currentItem())
+
+    def _nanoos_update_auto_button(self):
+        auto = self.state.get("auto_profiles", True)
+        button = self.games_profile_buttons.get("")
+        if button is not None:
+            button.setText("Auto" if auto else self.NANOOS_PROFILE_LABELS[""])
+
+    def _nanoos_profile_label(self, profile):
+        if profile:
+            return self.NANOOS_PROFILE_LABELS[profile]
+        if self.state.get("auto_profiles", True):
+            return f"Auto · {self.NANOOS_PROFILE_LABELS[gamemode_core.AUTO_PROFILE]}"
+        return self.NANOOS_PROFILE_LABELS[""]
 
     def refresh_per_game_page(self, *_args):
         """Rebuild the Per-Game list from the detected game library."""
@@ -2197,7 +2216,7 @@ class NanoOSGameMode(QMainWindow):
             profile = self._nanoos_game_profile(game)
             if profile:
                 custom += 1
-            label = self.NANOOS_PROFILE_LABELS[profile]
+            label = self._nanoos_profile_label(profile)
             searchable = (
                 f'{game["name"]} {game["source"]} {label}'
             ).casefold()
@@ -2263,6 +2282,12 @@ class NanoOSGameMode(QMainWindow):
                 f"{self.NANOOS_PROFILE_LABELS[profile]} profile and "
                 f"switches GameMode on."
             )
+        elif self.state.get("auto_profiles", True):
+            behavior = (
+                f"Automatic: the "
+                f"{self.NANOOS_PROFILE_LABELS[gamemode_core.AUTO_PROFILE]} "
+                f"profile and GameMode switch on when the game starts."
+            )
         else:
             behavior = "Launching uses your current profile unchanged."
         if not game.get("can_launch", False):
@@ -2313,6 +2338,8 @@ class NanoOSGameMode(QMainWindow):
         the default profile and nothing was changed).
         """
         profile = self._nanoos_game_profile(game)
+        if not profile and self.state.get("auto_profiles", True):
+            profile = gamemode_core.AUTO_PROFILE
         if not profile:
             return ""
 
@@ -8316,71 +8343,7 @@ class NanoOSGameMode(QMainWindow):
             except OSError:
                 pass
 
-        profile = PROFILE_DATA[self.state["profile"]].copy()
-
-        if self.state["gpu_performance"]:
-            desiredprof = "performance"
-        else:
-            desiredprof = "balanced"
-
-        if self.state["io_optimization"]:
-            ioprio = "0"
-        else:
-            ioprio = "off"
-
-        if self.state["scheduler_optimization"]:
-            renice = profile["renice"]
-        else:
-            renice = "0"
-
-        if self.state["screensaver_inhibit"]:
-            inhibit = "1"
-        else:
-            inhibit = "0"
-
-        # gamemode.ini only takes effect while GameMode is active, so it
-        # must always carry the profile's governor. (It used to be written
-        # as powersave unless this app's own toggle was on, which made
-        # games launched with gamemoderun run on the powersave governor.)
-        policy = Path("/sys/devices/system/cpu/cpufreq/policy0")
-        available_path = policy / "scaling_available_governors"
-        try:
-            available_governors = (
-                available_path.read_text(encoding="utf-8").split()
-                if available_path.exists() else []
-            )
-        except OSError:
-            available_governors = []
-
-        desiredgov = profile["desiredgov"]
-        if available_governors and desiredgov not in available_governors:
-            desiredgov = (
-                "performance" if "performance" in available_governors
-                else available_governors[0]
-            )
-
-        # Platform profile (laptops / handhelds), only when exposed.
-        platform_line = ""
-        choices_path = Path("/sys/firmware/acpi/platform_profile_choices")
-        try:
-            platform_choices = (
-                choices_path.read_text(encoding="utf-8").split()
-                if choices_path.exists() else []
-            )
-        except OSError:
-            platform_choices = []
-        if desiredprof in platform_choices:
-            platform_line = f"desiredprof={desiredprof}\n"
-
-        content = f"""[general]
-reaper_freq=5
-desiredgov={desiredgov}
-{platform_line}softrealtime={profile["softrealtime"]}
-renice={renice}
-ioprio={ioprio}
-inhibit_screensaver={inhibit}
-disable_splitlock=1
-"""
+        content = gamemode_core.render_gamemode_ini(self.state)
 
         try:
             GAMEMODE_CONFIG.write_text(
@@ -9473,7 +9436,7 @@ disable_splitlock=1
         footer_line.setFixedHeight(1)
         footer_line.setStyleSheet("background:#1d2c38;border:none;")
         layout.addWidget(footer_line)
-        footer = QLabel("NANOOS GAMEMODE  ·  V2")
+        footer = QLabel(f"NANOOS GAMEMODE  ·  {VERSION}")
         footer.setObjectName("mutedSmall")
         layout.addWidget(footer)
 

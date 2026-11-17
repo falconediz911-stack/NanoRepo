@@ -1,0 +1,223 @@
+#!/usr/bin/python3 -sP
+"""NanoOS Game Mode watcher: automatic per-game profiles.
+
+Runs as a systemd user service. When a Steam game starts (Steam wraps every
+game in `reaper SteamLaunch AppId=<id>`), it:
+
+  1. writes gamemode.ini for that game's profile (its own, or Gaming),
+  2. registers the game with the GameMode daemon (`gamemoded -r<pid>`),
+     which ends GameMode by itself when the game exits,
+  3. turns CPU boost and GPU performance on through the NanoOS helper
+     (no password for the logged-in user), and restores them afterwards.
+
+Turn it off in NanoOS Game Mode → Per-Game ("Automatic game profiles").
+"""
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.path[:0] = [os.path.dirname(os.path.realpath(__file__)), "/usr/lib/nanoos-gamemode"]
+import nanoos_gamemode_core as core  # noqa: E402
+
+POLL_SECONDS = 3
+STEAM_ROOTS = [
+    Path.home() / ".local/share/Steam",
+    Path.home() / ".steam/steam",
+    Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/Steam",
+]
+# Steam tools that also run under reaper but are not games.
+NOT_GAMES = re.compile(r"proton|steam linux runtime|steamworks common|steamvr", re.I)
+BOOST = Path("/sys/devices/system/cpu/cpufreq/boost")
+
+
+def log(message):
+    print(message, flush=True)
+
+
+def steam_games_running():
+    """{appid: pid of its reaper process}."""
+    games = {}
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdigit():
+            continue
+        try:
+            if proc.stat().st_uid != os.getuid():
+                continue
+            argv = (proc / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if len(argv) < 3 or not argv[0].endswith(b"reaper") or b"SteamLaunch" not in argv:
+            continue
+        for arg in argv:
+            match = re.fullmatch(rb"AppId=(\d+)", arg)
+            if match and match.group(1) != b"0":
+                games.setdefault(match.group(1).decode(), int(proc.name))
+    return games
+
+
+def steam_game_name(appid):
+    libraries = set()
+    for root in STEAM_ROOTS:
+        steamapps = root / "steamapps"
+        if steamapps.is_dir():
+            libraries.add(steamapps)
+            try:
+                text = (steamapps / "libraryfolders.vdf").read_text(errors="replace")
+            except OSError:
+                text = ""
+            for path in re.findall(r'"path"\s*"([^"]+)"', text):
+                libraries.add(Path(path) / "steamapps")
+    for steamapps in libraries:
+        try:
+            text = (steamapps / f"appmanifest_{appid}.acf").read_text(errors="replace")
+        except OSError:
+            continue
+        match = re.search(r'"name"\s*"([^"]+)"', text)
+        if match:
+            return match.group(1)
+    return f"Steam game {appid}"
+
+
+def notify(summary, body):
+    if shutil.which("notify-send"):
+        subprocess.Popen(["notify-send", "-a", "NanoOS Game Mode", "-i", "nanoos-gamemode",
+                          "-t", "4000", summary, body],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def helper(*operations):
+    """Run NanoOS helper operations in one call ("boost=1", "gpu=on")."""
+    if not operations or not Path(core.HELPER_PATH).is_file() or not shutil.which("pkexec"):
+        return False
+    try:
+        result = subprocess.run(["pkexec", core.HELPER_PATH, "batch", *operations],
+                                capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0:
+        log(f"helper {' '.join(operations)} failed: {(result.stderr or result.stdout).strip()}")
+    return result.returncode == 0
+
+
+def read_boost():
+    try:
+        return BOOST.read_text().strip()
+    except OSError:
+        return None
+
+
+class Watcher:
+    def __init__(self):
+        self.active = {}          # appid -> {"pid", "name", "gamemoded"}
+        self.restore = None       # settings to put back after the last game
+        self.ini_before = None
+
+    def start_game(self, appid, pid):
+        name = steam_game_name(appid)
+        if NOT_GAMES.search(name):
+            self.active[appid] = {"pid": pid, "name": name, "ignored": True}
+            return
+        state = core.load_state()
+        profile, automatic = core.profile_for_game(state, core.game_key("Steam", appid))
+        if profile is None:
+            self.active[appid] = {"pid": pid, "name": name, "ignored": True}
+            log(f"{name}: automatic profiles are off")
+            return
+
+        if not self.active_games():
+            # First game: remember what to restore, then apply the profile.
+            try:
+                self.ini_before = core.GAMEMODE_CONFIG.read_text(encoding="utf-8")
+            except OSError:
+                self.ini_before = None
+            self.restore = {"boost": read_boost()}
+        try:
+            core.GAMEMODE_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+            core.GAMEMODE_CONFIG.write_text(core.render_gamemode_ini(state, profile), encoding="utf-8")
+        except OSError as exc:
+            log(f"gamemode.ini: {exc}")
+
+        operations = []
+        if state.get("cpu_boost", True) and profile != "Balanced" and read_boost() == "0":
+            operations.append("boost=1")
+        if state.get("gpu_performance", True) and profile != "Balanced":
+            operations.append("gpu=on")
+            self.restore["gpu"] = True
+        helper(*operations)
+
+        registered = None
+        if shutil.which("gamemoded"):
+            # gamemoded watches the pid and leaves GameMode when it exits.
+            registered = subprocess.run(["gamemoded", f"-r{pid}"], capture_output=True,
+                                        text=True, timeout=10).returncode == 0
+        self.active[appid] = {"pid": pid, "name": name, "gamemoded": registered}
+        label = f"{profile} profile" + (" (automatic)" if automatic else "")
+        log(f"{name} started (pid {pid}): {label}, GameMode {'on' if registered else 'unavailable'}")
+        notify(f"{name}", f"{label} applied" + ("  ·  GameMode on" if registered else ""))
+
+    def end_game(self, appid):
+        game = self.active.pop(appid)
+        if game.get("ignored"):
+            return
+        log(f"{game['name']} exited")
+        if self.active_games():
+            return
+        restore, self.restore = self.restore or {}, None
+        operations = []
+        if restore.get("boost") == "0":
+            operations.append("boost=0")
+        if restore.get("gpu"):
+            operations.append("gpu=off")
+        helper(*operations)
+        if self.ini_before is not None:
+            # Put back the configuration of the profile chosen in the app.
+            try:
+                core.GAMEMODE_CONFIG.write_text(self.ini_before, encoding="utf-8")
+            except OSError:
+                pass
+        self.ini_before = None
+
+    def active_games(self):
+        return [a for a, g in self.active.items() if not g.get("ignored")]
+
+    def poll(self):
+        running = steam_games_running()
+        for appid, pid in running.items():
+            if appid not in self.active:
+                try:
+                    self.start_game(appid, pid)
+                except Exception as exc:  # never let one game stop the watcher
+                    log(f"{appid}: {type(exc).__name__}: {exc}")
+                    self.active[appid] = {"pid": pid, "name": appid, "ignored": True}
+        for appid in [a for a in self.active if a not in running]:
+            self.end_game(appid)
+
+
+def main():
+    if "--once" in sys.argv:
+        print(steam_games_running())
+        return 0
+    watcher = Watcher()
+    stopping = []
+    signal.signal(signal.SIGTERM, lambda *_: stopping.append(True))
+    signal.signal(signal.SIGINT, lambda *_: stopping.append(True))
+    log("NanoOS Game Mode watcher started")
+    while not stopping:
+        watcher.poll()
+        for _ in range(POLL_SECONDS * 4):
+            if stopping:
+                break
+            time.sleep(0.25)
+    # Leave the system as it was if we are stopped mid-game.
+    for appid in list(watcher.active):
+        watcher.end_game(appid)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
