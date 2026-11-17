@@ -111,6 +111,26 @@ _nanoos_grub_hook() {
   [ -f /boot/grub/grub.cfg ] && /usr/bin/nanoos-grub-display --update >/dev/null 2>&1 || true
 }
 
+# 9. Performance: network tuning (packaged sysctl file, applied now),
+#    boot without waiting for the network (once), Breeze-Dark GTK theme for
+#    users still on the NanoOS default (Adwaita-dark).
+_nanoos_performance() {
+  sysctl --load=/usr/lib/sysctl.d/90-nanoos-network.conf >/dev/null 2>&1 || true
+  local mark=/var/lib/nanoos/wait-online-disabled
+  if [ ! -e "$mark" ]; then
+    systemctl disable NetworkManager-wait-online.service >/dev/null 2>&1 || true
+    mkdir -p /var/lib/nanoos && touch "$mark"
+  fi
+  local user home f
+  while IFS=: read -r user _ uid _ _ home _; do
+    [ "$uid" -ge 1000 ] && [ "$uid" -lt 60000 ] && [ -d "$home" ] || continue
+    for f in "$home/.config/gtk-3.0/settings.ini" "$home/.config/gtk-4.0/settings.ini"; do
+      [ -f "$f" ] && grep -qx 'gtk-theme-name=Adwaita-dark' "$f" || continue
+      sed -i 's/^gtk-theme-name=Adwaita-dark$/gtk-theme-name=Breeze-Dark/' "$f"
+    done
+  done < /etc/passwd
+}
+
 _nanoos_update() {
   _nanoos_identity
   _nanoos_windows_clock
@@ -120,6 +140,7 @@ _nanoos_update() {
   _nanoos_grub_display
   _nanoos_fastfetch
   _nanoos_grub_hook
+  _nanoos_performance
 }
 
 post_install() { _nanoos_update; }
