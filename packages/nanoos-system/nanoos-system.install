@@ -89,6 +89,17 @@ _nanoos_grub_display() {
   [ -f /boot/grub/themes/nanoos/theme.txt ] && /usr/bin/nanoos-grub-display || true
 }
 
+# 7. fastfetch: Display, Window Manager, Theme, Terminal Font, Local IP
+#    (only NanoOS's own configs; colours of the user's theme are kept).
+_nanoos_fastfetch() {
+  local f
+  for f in /etc/xdg/fastfetch/config.jsonc /etc/fastfetch/config.jsonc; do
+    grep -q 'NanoOS' "$f" 2>/dev/null || continue
+    grep -q '"terminalfont"' "$f" && continue
+    python3 /usr/share/nanoos-system/nanoos-fastfetch-modules.py "$f" 2>/dev/null || true
+  done
+}
+
 _nanoos_update() {
   _nanoos_identity
   _nanoos_windows_clock
@@ -96,6 +107,7 @@ _nanoos_update() {
   _nanoos_pacman
   _nanoos_zsh
   _nanoos_grub_display
+  _nanoos_fastfetch
 }
 
 post_install() { _nanoos_update; }
