@@ -1,0 +1,11 @@
+[Unit]
+Description=Match the NanoOS GRUB menu to the connected monitor
+After=systemd-udev-settle.service display-manager.service
+ConditionPathExists=/boot/grub/themes/nanoos/theme.txt
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/nanoos-grub-display --check
+
+[Install]
+WantedBy=multi-user.target

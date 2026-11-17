@@ -1,0 +1,204 @@
+#!/usr/bin/python3
+"""Match the NanoOS GRUB menu to the connected monitor.
+
+GRUB_GFXMODE=auto lets the firmware pick a low resolution (often 1024x768 or
+1080p) that a 1440p or 4K monitor then stretches, so the menu looks huge. This
+tool sets GRUB to the monitor's native resolution and selects a theme variant
+scaled for it (fonts, rows and spacing x1, x1.33 or x2), keeping the colours of
+the user's NanoOS theme.
+
+    nanoos-grub-display            apply and regenerate grub.cfg if needed
+    nanoos-grub-display --check    only act when the monitor changed (boot)
+    nanoos-grub-display --status   show what would be used
+"""
+import glob
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+THEME_DIR = Path("/boot/grub/themes/nanoos")
+FONTS = Path("/usr/share/nanoos-system/grub")
+DEFAULTS = Path("/etc/default/grub")
+STATE = Path("/var/lib/nanoos/grub-display")
+# (minimum monitor height, theme file, scale)
+VARIANTS = [(2000, "theme-2160.txt", 2.0), (1400, "theme-1440.txt", 4 / 3), (0, "theme.txt", 1.0)]
+# Pixel values in theme.txt that grow with the scale (percentages never do).
+SCALED_KEYS = ("item_height", "item_padding", "item_spacing", "scrollbar_width", "height")
+
+
+def monitor_mode():
+    """Preferred mode of the first connected monitor, e.g. (3840, 2160)."""
+    best = None
+    for status in sorted(glob.glob("/sys/class/drm/card*-*/status")):
+        try:
+            if Path(status).read_text().strip() != "connected":
+                continue
+            modes = (Path(status).parent / "modes").read_text().split()
+        except OSError:
+            continue
+        for mode in modes:
+            match = re.match(r"(\d+)x(\d+)", mode)
+            if match:
+                size = (int(match.group(1)), int(match.group(2)))
+                if best is None or size[1] > best[1]:
+                    best = size
+                break
+    return best
+
+
+def boot_framebuffer():
+    """Resolution GRUB really used on this boot (kernel boot_params screen_info),
+    or None when unknown (not an EFI framebuffer, or not readable)."""
+    try:
+        data = Path("/sys/kernel/boot_params/data").read_bytes()
+    except OSError:
+        return None
+    if len(data) < 0x18 or data[0x0F] != 0x70:  # VIDEO_TYPE_EFI
+        return None
+    width = int.from_bytes(data[0x12:0x14], "little")
+    height = int.from_bytes(data[0x14:0x16], "little")
+    return (width, height) if width and height else None
+
+
+def grub_cfg_text():
+    try:
+        return Path("/boot/grub/grub.cfg").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def grub_cfg_used_this_boot():
+    """True when /boot/grub/grub.cfg is older than this boot (GRUB read it)."""
+    try:
+        uptime = float(Path("/proc/uptime").read_text().split()[0])
+        return os.stat("/boot/grub/grub.cfg").st_mtime < time.time() - uptime
+    except (OSError, ValueError):
+        return False
+
+
+def requested_gfxmode():
+    try:
+        match = re.search(r'(?m)^GRUB_GFXMODE="?([0-9]+x[0-9]+)', DEFAULTS.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    return match.group(1) if match else None
+
+
+def font_size(size, scale):
+    return {1.0: size}.get(scale) or {2.0: {16: 32, 20: 40, 28: 56}, 4 / 3: {16: 21, 20: 27, 28: 37}}[scale].get(size, round(size * scale))
+
+
+def scaled_theme(text, scale):
+    if scale == 1.0:
+        return text
+    text = re.sub(r"NanoOS (Regular|Bold) (\d+)",
+                  lambda m: f"NanoOS {m.group(1)} {font_size(int(m.group(2)), scale)}", text)
+    keys = "|".join(SCALED_KEYS)
+    return re.sub(rf"(?m)^(\s*(?:{keys})\s*=\s*)(\d+)\s*$",
+                  lambda m: f"{m.group(1)}{round(int(m.group(2)) * scale)}", text)
+
+
+def set_default(text, key, value):
+    """Exactly one active KEY="value" line: the first existing (or commented)
+    line becomes it, every later active duplicate is removed."""
+    line = f'{key}="{value}"'
+    out, placed = [], False
+    for current in text.splitlines():
+        if re.match(rf"^#?\s*{key}=", current):
+            if not placed:
+                out.append(line)
+                placed = True
+            elif current.lstrip().startswith("#"):
+                out.append(current)
+            continue
+        out.append(current)
+    if not placed:
+        out.append(line)
+    return "\n".join(out) + "\n"
+
+
+def grub_cfg_matches(theme_file, gfxmode):
+    try:
+        cfg = Path("/boot/grub/grub.cfg").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return (f"/boot/grub/themes/nanoos/{theme_file}\n" in cfg
+            and f"set gfxmode={gfxmode}" in cfg)
+
+
+def main():
+    check = "--check" in sys.argv
+    status_only = "--status" in sys.argv
+    mode = monitor_mode()
+    if not (THEME_DIR / "theme.txt").is_file():
+        print("NanoOS GRUB theme not installed; nothing to do.")
+        return 0
+    if mode is None:
+        print("No connected monitor reported by the kernel; keeping GRUB as it is.")
+        return 0
+    width, height = mode
+    native = f"{width}x{height}"
+    # GRUB tries these in order and uses the first the firmware supports.
+    candidates = [native] + [m for m in ("2560x1440", "1920x1080") if int(m.split("x")[1]) < height]
+    note = ""
+    actual = boot_framebuffer()
+    native_list = ",".join(candidates + ["auto"])
+    if actual and grub_cfg_used_this_boot() and f"set gfxmode={native_list}" in grub_cfg_text():
+        # This boot used the current grub.cfg, so the firmware really showed `actual`.
+        if actual != (width, height):
+            note = f" (firmware shows {actual[0]}x{actual[1]}, not {native})"
+        width, height = actual
+        candidates = [f"{width}x{height}"]
+    else:
+        locked = requested_gfxmode()
+        if locked and locked != native and STATE.is_file() and native in STATE.read_text():
+            # Learned on an earlier boot; keep it.
+            width, height = (int(v) for v in locked.split("x"))
+            candidates = [locked]
+            note = f" (firmware shows {locked}, not {native})"
+    theme_file, scale = next((f, s) for minimum, f, s in VARIANTS if height >= minimum)
+    gfxmode = ",".join(candidates + ["auto"])
+    signature = f"monitor {native} grub {gfxmode} {theme_file}\n"
+    if status_only:
+        print(f"Monitor {native}{note} -> GRUB_GFXMODE={gfxmode}, {theme_file} (scale {scale:.2f})")
+        return 0
+    if os.geteuid() != 0:
+        print("Run as root.", file=sys.stderr)
+        return 1
+    if check and STATE.is_file() and STATE.read_text() == signature:
+        return 0
+
+    for font in FONTS.glob("*.pf2"):
+        target = THEME_DIR / font.name
+        if not target.is_file() or target.read_bytes() != font.read_bytes():
+            shutil.copy2(font, target)
+    base = (THEME_DIR / "theme.txt").read_text(encoding="utf-8")
+    for _, name, variant_scale in VARIANTS:
+        if name != "theme.txt":
+            (THEME_DIR / name).write_text(scaled_theme(base, variant_scale), encoding="utf-8")
+
+    original = DEFAULTS.read_text(encoding="utf-8")
+    updated = set_default(original, "GRUB_GFXMODE", gfxmode)
+    updated = set_default(updated, "GRUB_THEME", str(THEME_DIR / theme_file))
+    if updated != original:
+        DEFAULTS.write_text(updated, encoding="utf-8")
+    # Regenerate whenever grub.cfg does not already use the chosen theme/mode.
+    if not grub_cfg_matches(theme_file, gfxmode):
+        result = subprocess.run(["grub-mkconfig", "-o", "/boot/grub/grub.cfg"],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        if result.returncode != 0 or not grub_cfg_matches(theme_file, gfxmode):
+            print(result.stderr.strip() or "grub.cfg was not updated", file=sys.stderr)
+            return 1
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    STATE.write_text(signature)
+
+    print(f":: NanoOS: GRUB menu set for {width}x{height} ({theme_file}){note}.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

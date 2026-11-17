@@ -2,6 +2,7 @@
 """NanoOS Welcome: first-run guide and one-click setup (gaming tools,
 kernels, software, desktops). Built on the shared NanoOS UI kit."""
 
+import re
 import shlex
 import shutil
 import socket
@@ -233,6 +234,15 @@ class WelcomeWindow(NanoShell):
                 f"Install a locally built {NANOOS_KERNEL} .pkg.tar.zst package.",
                 "Choose",
                 self.install_local_kernel,
+            )
+        )
+
+        layout.addWidget(
+            ActionCard(
+                "Repair Kernel Drivers",
+                "Install missing headers so the NVIDIA (DKMS) driver is built for every installed kernel.",
+                "Repair",
+                self.repair_kernel_drivers,
             )
         )
 
@@ -729,11 +739,53 @@ class WelcomeWindow(NanoShell):
     # ------------------------------------------------------------ kernels
     GRUB_HOOK = Path("/etc/pacman.d/hooks/99-nanoos-grub.hook")
 
+    KERNEL_EXTRAS = ("-headers", "-docs", "-firmware", "-api-headers")
+
+    @staticmethod
+    def installed_packages():
+        try:
+            result = subprocess.run(["pacman", "-Qq"], capture_output=True, text=True, check=False)
+        except OSError:
+            return set()
+        return set(result.stdout.split())
+
+    def dkms_in_use(self, installed=None):
+        installed = self.installed_packages() if installed is None else installed
+        return any(name.endswith("-dkms") for name in installed)
+
+    def kernel_headers_for(self, kernels):
+        """Headers so DKMS drivers (NVIDIA) get built for these kernels."""
+        return [
+            name + "-headers" for name in kernels
+            if name.startswith("linux") and not name.endswith(self.KERNEL_EXTRAS)
+        ]
+
     def install_kernel(self, packages, title):
         pacman = shutil.which("pacman") or "/usr/bin/pacman"
+        packages = list(packages)
+        if self.dkms_in_use():
+            # Without headers DKMS cannot build the NVIDIA driver for the new
+            # kernel and its initramfs ends up without the graphics driver.
+            packages += [h for h in self.kernel_headers_for(packages) if h not in packages]
         self.run_kernel_transaction(
             [pacman, "-S", "--needed", "--noconfirm", *packages], title
         )
+
+    def repair_kernel_drivers(self):
+        installed = self.installed_packages()
+        kernels = [
+            name for name in installed
+            if re.fullmatch(r"linux(-[a-z0-9]+)*", name) and not name.endswith(self.KERNEL_EXTRAS)
+            and name not in ("linux-firmware",) and not name.startswith("linux-firmware")
+        ]
+        missing = [h for h in self.kernel_headers_for(kernels) if h not in installed]
+        if not self.dkms_in_use(installed):
+            self.status.setText("No DKMS drivers installed; nothing to repair.")
+            return
+        if not missing:
+            self.status.setText("Every installed kernel already has its headers.")
+            return
+        self.install_kernel(missing, "Kernel driver repair")
 
     def run_kernel_transaction(self, pacman_command, title):
         """Install a kernel, then regenerate the GRUB menu so it can be

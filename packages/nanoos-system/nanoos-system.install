@@ -83,12 +83,19 @@ _nanoos_zsh() {
   done < /etc/passwd
 }
 
+# 6. GRUB menu sized for the monitor (native resolution + scaled theme).
+_nanoos_grub_display() {
+  systemctl enable nanoos-grub-display.service >/dev/null 2>&1
+  [ -f /boot/grub/themes/nanoos/theme.txt ] && /usr/bin/nanoos-grub-display || true
+}
+
 _nanoos_update() {
   _nanoos_identity
   _nanoos_windows_clock
   _nanoos_mirrors
   _nanoos_pacman
   _nanoos_zsh
+  _nanoos_grub_display
 }
 
 post_install() { _nanoos_update; }
