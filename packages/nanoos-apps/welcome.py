@@ -2,6 +2,7 @@
 """NanoOS Welcome: first-run guide and one-click setup (gaming tools,
 kernels, software, desktops). Built on the shared NanoOS UI kit."""
 
+import os
 import re
 import shlex
 import shutil
@@ -39,14 +40,37 @@ def _nanoos_edition():
 EDITION = _nanoos_edition()
 GAMING = EDITION != "NanoOS Basic"
 NANOOS_KERNEL = "NanoOS Gaming Kernel" if GAMING else "NanoOS Fluffy Kernel"
-VERSION = "V2"
+VERSION = "2.0"
 
 
 class WelcomeWindow(NanoShell):
     APP_NAME = f"{APP_NAME}"
     BRAND_SUB = "WELCOME CENTER"
     EYEBROW = "NANOOS  /  WELCOME"
-    FOOTER = f"NANOOS WELCOME  ·  {VERSION}"
+    FOOTER = "NANOOS WELCOME"
+    NAV_ICONS = {
+        "Welcome": "go-home",
+        "Gaming Components": "applications-games",
+        "Kernels": ["preferences-system-linux", "cpu"],
+        "Software": "plasmadiscover",
+        "Coding": "applications-development",
+        "Desktop Environments": "preferences-desktop",
+        "Desktop Components": "preferences-desktop-display",
+        "Window Managers": "preferences-system-windows",
+        "System": "computer",
+        "Preferences": "configure",
+        "About NanoOS": "help-about",
+    }
+    # Fallback card icon for apps that are not installed yet (their own
+    # icon only exists once the app is installed).
+    PAGE_ICONS = {
+        "Gaming Components": "applications-games",
+        "Software": "applications-utilities",
+        "Coding": "applications-development",
+        "Desktop Environments": "preferences-desktop",
+        "Desktop Components": "preferences-desktop-display",
+        "Window Managers": "preferences-system-windows",
+    }
     MENU = [
         "Welcome", *(["Gaming Components"] if GAMING else []), "Kernels", "Software", "Coding",
         "Desktop Environments", "Desktop Components", "Window Managers",
@@ -56,7 +80,11 @@ class WelcomeWindow(NanoShell):
     LOG_PLACEHOLDER = "Installation output appears here when you open the output panel."
 
     def build_pages(self):
+        # (card, packages, kind) for every card that installs packages, so
+        # their Installed badges can be refreshed after each transaction.
+        self.package_cards = []
         self.add_pages()
+        self.refresh_installed()
 
     def copy_system_value(self, label, value):
         self.copy_value(label, value)
@@ -153,6 +181,7 @@ class WelcomeWindow(NanoShell):
                 layout.addWidget(ActionCard(
                     title, description, "Launch",
                     lambda program=program, title=title: self.launch_app(program, title),
+                    icon=[Path(program[-1]).name, "nanoos"],
                 ))
             layout.addWidget(self.group_label("Set up your system"))
         for title, description, callback in welcome_items:
@@ -162,6 +191,7 @@ class WelcomeWindow(NanoShell):
                     description,
                     "Open",
                     callback,
+                    icon=self.NAV_ICONS.get(title),
                 )
             )
 
@@ -218,22 +248,24 @@ class WelcomeWindow(NanoShell):
         ]
 
         for title, description, packages in kernels:
-            layout.addWidget(
-                ActionCard(
-                    title,
-                    description,
-                    "Install",
-                    lambda p=packages, t=title:
-                        self.install_kernel(p, t),
-                )
+            card = ActionCard(
+                title,
+                description,
+                "Install",
+                lambda p=packages, t=title:
+                    self.install_kernel(p, t),
+                icon=["preferences-system-linux", "cpu"],
             )
+            self.package_cards.append((card, packages, "kernel"))
+            layout.addWidget(card)
 
         layout.addWidget(
             ActionCard(
                 NANOOS_KERNEL,
                 f"Install a locally built {NANOOS_KERNEL} .pkg.tar.zst package.",
-                "Choose",
+                "Choose package",
                 self.install_local_kernel,
+                icon="nanoos",
             )
         )
 
@@ -243,27 +275,19 @@ class WelcomeWindow(NanoShell):
                 "Install missing headers so the NVIDIA (DKMS) driver is built for every installed kernel.",
                 "Repair",
                 self.repair_kernel_drivers,
+                icon="tools-wizard",
             )
         )
 
-        layout.addWidget(
-            ActionCard(
-                "Kernel Headers",
-                "Install Linux, LTS, Zen, Hardened, and RT headers individually when needed for development.",
-                "Install",
-                lambda: self.install_packages(
-                    [
-                        "linux-headers",
-                        "linux-lts-headers",
-                        "linux-zen-headers",
-                        "linux-hardened-headers",
-                        "linux-rt-headers",
-                        "linux-rt-lts-headers",
-                    ],
-                    "Kernel Headers",
-                ),
-            )
+        headers_card = ActionCard(
+            "Kernel Headers",
+            "Headers for every installed kernel, for DKMS drivers and building modules.",
+            "Install",
+            self.install_installed_kernel_headers,
+            icon="text-x-script",
         )
+        self.package_cards.append((headers_card, None, "headers"))
+        layout.addWidget(headers_card)
 
         layout.addStretch()
         self.add_page("Kernels", page)
@@ -546,23 +570,7 @@ class WelcomeWindow(NanoShell):
         # System
         # -------------------------------------------------
 
-        page, layout = self.page_header(
-            "System",
-            "Quick information about the system running NanoOS Welcome.",
-        )
-
-        for title, description in self.get_system_info():
-            layout.addWidget(
-                ActionCard(
-                    title,
-                    description,
-                    "Refresh",
-                    self.refresh_system,
-                )
-            )
-
-        layout.addStretch()
-        self.add_page("System", page)
+        self.refresh_system(show=False)
 
 
         # -------------------------------------------------
@@ -571,33 +579,38 @@ class WelcomeWindow(NanoShell):
 
         page, layout = self.page_header(
             "About NanoOS",
-            "The modern NanoOS Welcome experience.",
+            f"{EDITION} {self.edition_version()}: an Arch-based system that is fast, "
+            "polished and ready to use out of the box.",
+            searchable=False,
         )
 
-        about = [
-            (
-                "NanoOS Welcome V2",
-                "A modern first-party setup center for NanoOS.",
-            ),
-            (
-                "Patchy Patchy",
-                "Welcome changes are maintained through nanooswelcomepatch.py.",
-            ),
-            (
-                "Design",
-                "Rounded surfaces, clean spacing, smooth scrolling, and modern controls.",
-            ),
-        ]
-
-        for title, description in about:
-            layout.addWidget(
-                ActionCard(
-                    title,
-                    description,
-                    "OK",
-                    lambda: None,
-                )
-            )
+        layout.addWidget(ActionCard(
+            f"{EDITION} {self.edition_version()}".strip(),
+            (f"Gaming-tuned Arch Linux with the {NANOOS_KERNEL}, NanoOS Game Mode and a ready KDE Plasma desktop."
+             if GAMING else
+             f"Clean Arch Linux with the {NANOOS_KERNEL} and a ready KDE Plasma desktop."),
+            icon="nanoos",
+        ))
+        layout.addWidget(ActionCard(
+            f"NanoOS Welcome {VERSION}",
+            "First-run setup: kernels, apps, desktops and development tools, one click each.",
+            icon="nanoos-welcome",
+        ))
+        layout.addWidget(ActionCard(
+            "Updates",
+            "NanoOS tools and apps update with the rest of the system from the NanoOS "
+            "repositories. Open Control Center → Updates to see what is new.",
+            "Open Updates",
+            lambda: self.launch_app([CONTROL_CENTER, "--page", "Updates"], "NanoOS Control Center"),
+            icon="system-software-update",
+        ))
+        layout.addWidget(ActionCard(
+            "Website",
+            "Downloads, release notes and the development log.",
+            "Open website",
+            lambda: self.launch_app(["xdg-open", "https://nanoosproject.org"], "NanoOS website"),
+            icon="internet-web-browser",
+        ))
 
         layout.addStretch()
         self.add_page("About NanoOS", page)
@@ -637,19 +650,136 @@ class WelcomeWindow(NanoShell):
             description,
         )
 
+        fallback = self.PAGE_ICONS.get(name, "package-x-generic")
         for title, card_description, packages in items:
-            layout.addWidget(
-                ActionCard(
-                    title,
-                    card_description,
-                    "Install",
-                    lambda p=packages, t=title:
-                        self.install_packages(p, t),
-                )
+            first = packages[0] if packages else ""
+            card = ActionCard(
+                title,
+                card_description,
+                "Install",
+                lambda p=packages, t=title:
+                    self.install_packages(self.missing_packages(p), t),
+                icon=self.CARD_ICONS.get(title, []) + [
+                    first, f"org.kde.{first}", title.lower().replace(" ", "-"), fallback,
+                ],
             )
+            self.package_cards.append((card, packages, "package"))
+            layout.addWidget(card)
 
         layout.addStretch()
         self.add_page(name, page)
+
+    # Theme icon names that differ from the package name.
+    CARD_ICONS = {
+        "NanoOS Game Mode": ["nanoos-gamemode"],
+        "OBS Studio": ["com.obsproject.Studio"],
+        "Lutris": ["net.lutris.Lutris"],
+        "Prism Launcher": ["org.prismlauncher.PrismLauncher"],
+        "Wine": ["wine"],
+        "LibreOffice": ["libreoffice-startcenter"],
+        "KDE Partition Manager": ["partitionmanager"],
+        "Kitty": ["kitty"],
+        "Dolphin": ["org.kde.dolphin"],
+        "Ark": ["org.kde.ark"],
+        "KDE Plasma": ["plasma", "kde"],
+    }
+
+    @staticmethod
+    def edition_version():
+        try:
+            for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+                if line.startswith("VERSION="):
+                    return line.split("=", 1)[1].strip().strip('"')
+        except OSError:
+            pass
+        return ""
+
+    def package_groups(self):
+        """{group: [members]} from the sync databases, read once."""
+        if getattr(self, "_groups", None) is None:
+            self._groups = {}
+            try:
+                output = subprocess.run(["pacman", "-Sg"], capture_output=True, text=True,
+                                        timeout=10, check=False).stdout
+            except (OSError, subprocess.TimeoutExpired):
+                output = ""
+            for line in output.splitlines():
+                group, _, member = line.partition(" ")
+                if member:
+                    self._groups.setdefault(group, []).append(member)
+        return self._groups
+
+    def missing_packages(self, packages, installed=None):
+        installed = self.installed_packages() if installed is None else installed
+        missing = []
+        for name in packages or ():
+            if name in installed:
+                continue
+            members = self.package_groups().get(name)
+            if members and all(member in installed for member in members):
+                continue
+            missing.append(name)
+        return missing
+
+    def installed_kernels(self, installed):
+        return [
+            name for name in installed
+            if re.fullmatch(r"linux(-[a-z0-9]+)*", name)
+            and not name.endswith(self.KERNEL_EXTRAS) and not name.startswith("linux-firmware")
+            and name not in ("linux-api-headers",)
+        ]
+
+    def running_kernel_package(self):
+        """Package that owns the running kernel, e.g. linux-zen."""
+        try:
+            pkgbase = Path(f"/usr/lib/modules/{os.uname().release}/pkgbase").read_text().strip()
+            return pkgbase
+        except OSError:
+            return ""
+
+    def refresh_installed(self):
+        """Mark every package card Installed / Partly installed / not."""
+        installed = self.installed_packages()
+        dkms = self.dkms_in_use(installed)
+        running = self.running_kernel_package()
+        kernels = self.installed_kernels(installed)
+        for card, packages, kind in self.package_cards:
+            try:
+                if kind == "headers":
+                    missing = [h for h in self.kernel_headers_for(kernels) if h not in installed]
+                    if missing:
+                        card.set_badge(f"{len(missing)} missing", "warn" if dkms else "info")
+                        card.set_action("Install", True)
+                    else:
+                        card.set_badge("Installed", "ok")
+                        card.set_action(visible=False)
+                    continue
+                missing = self.missing_packages(packages, installed)
+                if missing and len(missing) < len(packages):
+                    card.set_badge("Partly installed", "warn")
+                    card.set_action("Install rest", True)
+                elif missing:
+                    card.set_badge(None)
+                    card.set_action("Install", True)
+                elif kind == "kernel" and dkms and any(
+                        h not in installed for h in self.kernel_headers_for(packages)):
+                    card.set_badge("Headers missing", "warn")
+                    card.set_action("Repair", True)
+                else:
+                    card.set_badge("Running" if kind == "kernel" and running in packages
+                                   else "Installed", "ok")
+                    card.set_action(visible=False)
+            except RuntimeError:
+                continue  # card deleted with a rebuilt page
+
+    def install_installed_kernel_headers(self):
+        installed = self.installed_packages()
+        missing = [h for h in self.kernel_headers_for(self.installed_kernels(installed))
+                   if h not in installed]
+        if not missing:
+            self.status.setText("Every installed kernel already has its headers.")
+            return
+        self.install_packages(missing, "Kernel headers")
 
     def get_system_info(self):
         kernel = self.command_output(["uname", "-r"]).strip() or "Unavailable"
@@ -667,6 +797,7 @@ class WelcomeWindow(NanoShell):
             pass
         pacman = shutil.which("pacman") or "/usr/bin/pacman"
         return [
+            ("Edition", f"{EDITION} {self.edition_version()}".strip()),
             ("Hostname", hostname),
             ("Kernel", kernel),
             ("Architecture", architecture),
@@ -674,23 +805,26 @@ class WelcomeWindow(NanoShell):
             ("Package Backend", f"pacman · {pacman} (non-interactive GUI installs)"),
         ]
 
-    def refresh_system(self):
+    SYSTEM_ICONS = {"Edition": "nanoos", "Hostname": "network-wired", "Kernel": "preferences-system-linux",
+                    "Architecture": "computer", "CPU": "preferences-devices-cpu", "Package Backend": "package-x-generic"}
+
+    def refresh_system(self, show=True):
         # Rebuild the System page so its values are actually re-read.
         page, layout = self.page_header(
             "System",
             "Live host information from the machine running NanoOS Welcome.",
+            action=("Refresh", self.refresh_system),
         )
-        refresh_button = NanoButton("Refresh system information", "secondary")
-        refresh_button.clicked.connect(self.refresh_system)
-        layout.addWidget(refresh_button)
         for title, description in self.get_system_info():
             layout.addWidget(ActionCard(
-                title, description, "Copy value",
+                title, description, "Copy",
                 lambda value=description, label=title: self.copy_value(label, value),
+                icon=self.SYSTEM_ICONS.get(title),
             ))
         layout.addStretch(1)
         self.add_page("System", page)
-        self.show_page("System")
+        if show:
+            self.show_page("System")
 
     def command_output(self, command):
         try:
@@ -805,6 +939,7 @@ class WelcomeWindow(NanoShell):
         self.run_privileged(["/bin/sh", "-c", script], title, verb="Installing")
 
     def on_task_finished(self, title, success):
+        self.refresh_installed()
         if success and "==> Updating the GRUB boot menu" in self.log.toPlainText():
             self.status.setText(f"{title} installed · GRUB boot menu updated.")
         elif success and "NanoOS: updating the GRUB boot menu" in self.log.toPlainText():

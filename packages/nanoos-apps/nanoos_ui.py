@@ -6,33 +6,83 @@ desktop app (Welcome, Control Center), so they look and behave the same:
 
   NanoShell      rounded shell, sidebar (brand, search, nav), page stack,
                  status bar, output panel and a pkexec process runner
-  ActionCard     title + description + action button (optional usage bar)
+  ActionCard     icon + title + description + badge + action button
+                 (optional usage bar)
+  StatTile       live value with a sparkline graph (dashboards)
   NanoButton     custom-painted nav / primary / secondary button
   SmoothScrollArea, FadingScrollBar   animated scrolling
 """
 
 import shutil
+from collections import deque
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QElapsedTimer, QProcess, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtCore import (
+    QEasingCurve, QElapsedTimer, QPointF, QProcess, QPropertyAnimation, QSize,
+    Qt, QTimer, Signal,
+)
+from PySide6.QtGui import (
+    QColor, QFont, QFontMetrics, QIcon, QLinearGradient, QPainter, QPainterPath,
+    QPen, QPixmap,
+)
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
-    QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QScrollBar,
-    QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
+    QApplication, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel,
+    QLineEdit, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
+    QScrollArea, QScrollBar, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 BRANDING_DIR = Path("/usr/share/nanoos/branding")
+NANOOS_APPS_VERSION = "2.0"
+
+
+_ICON_THEME_READY = False
+
+
+def _ensure_icon_theme():
+    """Icons must work outside Plasma too (Hyprland, Sway, a bare session),
+    where Qt may have no icon theme or not search the system icon folders."""
+    global _ICON_THEME_READY
+    if _ICON_THEME_READY:
+        return
+    _ICON_THEME_READY = True
+    import os
+    paths = list(QIcon.themeSearchPaths())
+    data_dirs = os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"
+    for base in [str(Path.home() / ".local/share"), *data_dirs.split(":")]:
+        candidate = str(Path(base) / "icons")
+        if candidate not in paths and Path(candidate).is_dir():
+            paths.append(candidate)
+    QIcon.setThemeSearchPaths(paths)
+    if QIcon.themeName() in ("", "hicolor") or not QIcon.hasThemeIcon("go-home"):
+        for theme in ("breeze-dark", "breeze", "Papirus-Dark", "Adwaita"):
+            if any((Path(p) / theme / "index.theme").is_file() for p in paths):
+                QIcon.setThemeName(theme)
+                break
+
+
+def theme_icon(names):
+    """First icon of `names` (a name or a list of names) the icon theme has,
+    or a null QIcon."""
+    _ensure_icon_theme()
+    if isinstance(names, QIcon):
+        return names
+    if isinstance(names, str):
+        names = [names]
+    for name in names or ():
+        if name and QIcon.hasThemeIcon(name):
+            return QIcon.fromTheme(name)
+    return QIcon()
 
 
 class NanoButton(QWidget):
     clicked = Signal()
 
-    def __init__(self, text, variant="nav"):
+    def __init__(self, text, variant="nav", icon=None):
         super().__init__()
 
         self.text_value = text
         self.variant = variant
+        self.icon = theme_icon(icon) if icon else QIcon()
         self.hovered = False
         self.pressed = False
         self.active = False
@@ -112,13 +162,34 @@ class NanoButton(QWidget):
         painter.setPen(foreground)
         painter.setFont(QFont("Inter", 10, QFont.Weight.DemiBold))
         if self.variant == "nav":
-            text_rect = rect.adjusted(15, 0, -12, 0)
+            left = 15
+            if not self.icon.isNull():
+                size = 18
+                mode = QIcon.Mode.Normal if self.isEnabled() else QIcon.Mode.Disabled
+                self.icon.paint(painter, rect.left() + 14, rect.center().y() - size // 2 + 1,
+                                size, size, Qt.AlignmentFlag.AlignCenter, mode)
+                left = 42
+            text_rect = rect.adjusted(left, 0, -12, 0)
             flags = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
         else:
             text_rect = rect.adjusted(8, 0, -8, 0)
             flags = Qt.AlignmentFlag.AlignCenter
-        painter.drawText(text_rect, flags, self.text_value)
+        metrics = QFontMetrics(painter.font())
+        painter.drawText(text_rect, flags,
+                         metrics.elidedText(self.text_value, Qt.TextElideMode.ElideRight, text_rect.width()))
         painter.end()
+
+    def set_text(self, text):
+        self.text_value = str(text)
+        self.setToolTip(self.text_value)
+        if self.variant != "nav":
+            self.setFixedWidth(button_width(self.text_value))
+        self.update()
+
+
+def button_width(text):
+    width = QFontMetrics(QFont("Inter", 10, QFont.Weight.DemiBold)).horizontalAdvance(str(text))
+    return max(94, min(240, width + 38))
 
 
 
@@ -706,18 +777,32 @@ class ActionCard(QFrame):
     shows a permanently disabled button (e.g. "Installed")."""
 
     def __init__(self, title, description, action_text=None, callback=None,
-                 fraction=None, enabled=True):
+                 fraction=None, enabled=True, icon=None, badge=None):
         super().__init__()
         self.setObjectName("actionCard")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.setMinimumHeight(86)
+        self.setMinimumHeight(80)
         self.title_text = str(title)
         self.description_text = str(description)
         self.search_blob = f"{self.title_text} {self.description_text}".casefold()
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(20, 16, 16, 16)
-        layout.setSpacing(18)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(16)
+
+        self.icon_label = None
+        if icon:
+            qicon = theme_icon(icon)
+            if not qicon.isNull():
+                tile = QLabel()
+                tile.setObjectName("cardIcon")
+                tile.setFixedSize(46, 46)
+                tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                ratio = self.devicePixelRatioF() or 1.0
+                pixmap = qicon.pixmap(QSize(30, 30), ratio)
+                tile.setPixmap(pixmap)
+                self.icon_label = tile
+                layout.addWidget(tile, 0, Qt.AlignmentFlag.AlignVCenter)
 
         body = QVBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
@@ -733,7 +818,20 @@ class ActionCard(QFrame):
         desc_label.setWordWrap(True)
         desc_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
 
-        body.addWidget(title_label)
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(10)
+        # The title stays on one line so the badge sits right after it.
+        title_label.setWordWrap(False)
+        title_row.addWidget(title_label, 0)
+        self.badge_label = QLabel()
+        self.badge_label.setObjectName("badge")
+        self.badge_label.hide()
+        title_row.addWidget(self.badge_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        title_row.addStretch(1)
+        self.title_label = title_label
+        self.desc_label = desc_label
+        body.addLayout(title_row)
         body.addWidget(desc_label)
         if fraction is not None:
             fraction = max(0.0, min(1.0, float(fraction)))
@@ -754,6 +852,8 @@ class ActionCard(QFrame):
             body.addSpacing(2)
             body.addLayout(bar_row)
         layout.addLayout(body, 1)
+        if badge:
+            self.set_badge(*(badge if isinstance(badge, tuple) else (badge,)))
 
         self.action_button = None
         if not action_text:
@@ -764,15 +864,132 @@ class ActionCard(QFrame):
         button.locked = not enabled
         button.setEnabled(enabled)
         # NanoButton paints its own label, so size it to the text.
-        text_width = QFontMetrics(QFont("Inter", 10, QFont.Weight.DemiBold)).horizontalAdvance(action_text)
-        button.setFixedWidth(max(94, min(220, text_width + 34)))
-        button.setFixedHeight(42)
+        button.setFixedWidth(button_width(action_text))
+        button.setFixedHeight(40)
         button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         button.setToolTip(action_text)
         if callback is not None:
             button.clicked.connect(callback)
         self.action_button = button
         layout.addWidget(button)
+
+    BADGE_KINDS = {"ok": "badgeOk", "info": "badge", "warn": "badgeWarn", "bad": "badgeBad"}
+
+    def set_badge(self, text=None, kind="ok"):
+        """Small pill next to the title ("Installed", "Active", "2 updates");
+        None hides it."""
+        if not text:
+            self.badge_label.hide()
+            return
+        self.badge_label.setObjectName(self.BADGE_KINDS.get(kind, "badge"))
+        self.badge_label.setText(str(text))
+        self.badge_label.style().unpolish(self.badge_label)
+        self.badge_label.style().polish(self.badge_label)
+        self.badge_label.show()
+
+    def set_description(self, text):
+        self.description_text = str(text)
+        self.desc_label.setText(self.description_text)
+        self.search_blob = f"{self.title_text} {self.description_text}".casefold()
+
+    def set_action(self, text=None, visible=True):
+        if self.action_button is None:
+            return
+        if text:
+            self.action_button.set_text(text)
+        self.action_button.setVisible(visible)
+
+
+class Sparkline(QWidget):
+    """Small filled line graph of the last `capacity` values (0..maximum)."""
+
+    def __init__(self, capacity=60, maximum=100.0, color="#66c7e8"):
+        super().__init__()
+        self.values = deque(maxlen=capacity)
+        self.maximum = maximum
+        self.auto_scale = maximum is None
+        self.color = QColor(color)
+        self.setMinimumHeight(44)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def push(self, value):
+        self.values.append(max(0.0, float(value)))
+        self.update()
+
+    def set_color(self, color):
+        self.color = QColor(color)
+        self.update()
+
+    def paintEvent(self, _event):
+        if len(self.values) < 2:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        rect = self.rect().adjusted(1, 3, -1, -1)
+        top = max(self.values) if self.auto_scale else self.maximum
+        top = top or 1.0
+        step = rect.width() / max(1, self.values.maxlen - 1)
+        start = rect.right() - step * (len(self.values) - 1)
+        points = [QPointF(start + i * step, rect.bottom() - min(1.0, v / top) * rect.height())
+                  for i, v in enumerate(self.values)]
+        line = QPainterPath(points[0])
+        for point in points[1:]:
+            line.lineTo(point)
+        area = QPainterPath(line)
+        area.lineTo(points[-1].x(), rect.bottom())
+        area.lineTo(points[0].x(), rect.bottom())
+        area.closeSubpath()
+        fill = QLinearGradient(0, rect.top(), 0, rect.bottom())
+        top_color = QColor(self.color)
+        top_color.setAlpha(90)
+        bottom_color = QColor(self.color)
+        bottom_color.setAlpha(0)
+        fill.setColorAt(0, top_color)
+        fill.setColorAt(1, bottom_color)
+        painter.fillPath(area, fill)
+        painter.setPen(QPen(self.color, 2))
+        painter.drawPath(line)
+        painter.end()
+
+
+class StatTile(QFrame):
+    """Dashboard tile: caption, big value, detail line and a sparkline."""
+
+    def __init__(self, caption, icon=None, maximum=100.0, color="#66c7e8"):
+        super().__init__()
+        self.setObjectName("statTile")
+        self.setMinimumWidth(200)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 12)
+        layout.setSpacing(4)
+        head = QHBoxLayout()
+        head.setSpacing(8)
+        if icon:
+            qicon = theme_icon(icon)
+            if not qicon.isNull():
+                mark = QLabel()
+                mark.setPixmap(qicon.pixmap(QSize(16, 16), self.devicePixelRatioF() or 1.0))
+                head.addWidget(mark)
+        caption_label = QLabel(caption.upper())
+        caption_label.setObjectName("statCaption")
+        head.addWidget(caption_label, 1)
+        layout.addLayout(head)
+        self.value_label = QLabel("–")
+        self.value_label.setObjectName("statValue")
+        layout.addWidget(self.value_label)
+        self.detail_label = QLabel(" ")
+        self.detail_label.setObjectName("statDetail")
+        self.detail_label.setWordWrap(True)
+        layout.addWidget(self.detail_label)
+        self.graph = Sparkline(maximum=maximum, color=color)
+        layout.addWidget(self.graph)
+
+    def update_value(self, value_text, detail=None, sample=None):
+        self.value_label.setText(value_text)
+        if detail is not None:
+            self.detail_label.setText(detail)
+        if sample is not None:
+            self.graph.push(sample)
 
 
 SHELL_QSS = """
@@ -828,6 +1045,28 @@ SHELL_QSS = """
         border-radius: 17px;
     }
     QFrame#actionCard:hover { background: #132230; border-color: #31566a; }
+    QLabel#cardIcon {
+        background: #0c1a25; border: 1px solid #1f3646; border-radius: 13px;
+    }
+    QLabel#badge, QLabel#badgeOk, QLabel#badgeWarn, QLabel#badgeBad {
+        border-radius: 9px; padding: 2px 9px; font-size: 10px; font-weight: 800;
+    }
+    QLabel#badge { color: #9be3f7; background: #10293a; border: 1px solid #214b5b; }
+    QLabel#badgeOk { color: #8de0b0; background: #0f2a22; border: 1px solid #1f5141; }
+    QLabel#badgeWarn { color: #f2c66d; background: #2a2412; border: 1px solid #574a20; }
+    QLabel#badgeBad { color: #ef8f98; background: #2c1418; border: 1px solid #5c2630; }
+    QFrame#statTile {
+        background: #0f1a24; border: 1px solid #223543; border-radius: 17px;
+    }
+    QLabel#statCaption { color: #7f93a7; font-size: 10px; font-weight: 800; }
+    QLabel#statValue { color: #e6eef6; font-size: 24px; font-weight: 800; }
+    QLabel#statDetail { color: #9aafbd; font-size: 11px; }
+    QPushButton#headerAction {
+        color: #b4c3d2; background: #142330;
+        border: 1px solid #294251; border-radius: 10px;
+        padding: 7px 14px; font-weight: 700;
+    }
+    QPushButton#headerAction:hover { color: #ffffff; border-color: #66c7e8; background: #1a3040; }
     QLineEdit#navSearch, QLineEdit#pageSearch {
         color: #e6eef6;
         background: #0b151f;
@@ -896,6 +1135,7 @@ class NanoShell(QWidget):
     EYEBROW = "NANOOS"            # breadcrumb above each page title
     FOOTER = "NANOOS"
     MENU = []
+    NAV_ICONS = {}               # page name -> icon theme name(s)
     START_PAGE = None
     LOG_PLACEHOLDER = "Command output appears here when you open the output panel."
 
@@ -989,7 +1229,7 @@ class NanoShell(QWidget):
         nav_layout.setContentsMargins(0, 5, 4, 5)
         nav_layout.setSpacing(5)
         for item in self.MENU:
-            button = NanoButton(item)
+            button = NanoButton(item, icon=self.NAV_ICONS.get(item))
             button.setToolTip(item)
             button.setAccessibleName(f"Open {item}")
             button.clicked.connect(lambda item=item: self.show_page(item))
@@ -1003,7 +1243,7 @@ class NanoShell(QWidget):
         footer_line.setFixedHeight(1)
         footer_line.setStyleSheet("background:#1d2c38;border:none;")
         side.addWidget(footer_line)
-        self.footer_label = QLabel(self.FOOTER)
+        self.footer_label = QLabel(f"{self.FOOTER}  ·  {NANOOS_APPS_VERSION}")
         self.footer_label.setObjectName("footer")
         side.addWidget(self.footer_label)
         shell_layout.addWidget(self.sidebar)
@@ -1062,7 +1302,9 @@ class NanoShell(QWidget):
         super().resizeEvent(event)
 
     # ------------------------------------------------------------ pages
-    def page_header(self, title, description, searchable=True):
+    def page_header(self, title, description, searchable=True, action=None):
+        """A page with eyebrow, title and description. `action` is an
+        optional (text, callback) shown as a small button next to the title."""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(4, 4, 4, 6)
@@ -1079,7 +1321,18 @@ class NanoShell(QWidget):
         desc.setMaximumWidth(920)
 
         layout.addWidget(eyebrow)
-        layout.addWidget(title_label)
+        if action:
+            title_row = QHBoxLayout()
+            title_row.setSpacing(12)
+            title_row.addWidget(title_label, 1)
+            action_button = QPushButton(action[0])
+            action_button.setObjectName("headerAction")
+            action_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            action_button.clicked.connect(action[1])
+            title_row.addWidget(action_button, 0, Qt.AlignmentFlag.AlignVCenter)
+            layout.addLayout(title_row)
+        else:
+            layout.addWidget(title_label)
         layout.addWidget(desc)
         layout.addSpacing(2)
 
@@ -1141,11 +1394,28 @@ class NanoShell(QWidget):
         target = self.pages.get(name)
         if target is None:
             return
+        changed = self.stack.currentWidget() is not target
         self.stack.setCurrentWidget(target)
+        if changed and self.isVisible():
+            self._fade_in(target)
         for item, button in self.nav_buttons.items():
             button.set_active(item == name)
         if not self.task_running():
             self.status.setText(f"{name}  ·  Ready")
+
+    def _fade_in(self, widget):
+        """Short fade when switching pages. The effect is removed afterwards
+        so it costs nothing while the page is in use."""
+        effect = QGraphicsOpacityEffect(widget)
+        effect.setOpacity(0.0)
+        widget.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b"opacity", widget)
+        animation.setDuration(150)
+        animation.setStartValue(0.0)
+        animation.setEndValue(1.0)
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        animation.finished.connect(lambda w=widget: w.setGraphicsEffect(None))
+        animation.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def current_page_name(self):
         current = self.stack.currentWidget()

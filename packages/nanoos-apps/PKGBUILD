@@ -1,27 +1,28 @@
 # Maintainer: NanoOS Project <https://nanoosproject.org>
 pkgname=nanoos-apps
-pkgver=2.3.1
+pkgver=3.0.0
 pkgrel=1
 pkgdesc='NanoOS Welcome and NanoOS Control Center'
 arch=('any')
 url='https://nanoosproject.org'
 license=('GPL-3.0-or-later')
-depends=('python' 'pyside6' 'qt6-svg' 'polkit' 'hicolor-icon-theme' 'reflector' 'efibootmgr')
+depends=('python' 'pyside6' 'qt6-svg' 'polkit' 'hicolor-icon-theme' 'reflector' 'efibootmgr' 'pacman-contrib')
 install=nanoos-apps.install
 source=(
   launcher.py welcome.py control_center.py
-  nanoos_ui.py nanoos_theme.py nanoos_platform.py
+  nanoos_ui.py nanoos_theme.py nanoos_platform.py nanoos_live.py nanoos-boot-config
   nanoos-welcome nanoos-control-center
   org.nanoos.Welcome.desktop org.nanoos.ControlCenter.desktop
   nanoos-welcome.svg nanoos-control-center.svg
 )
-sha256sums=('0f0aa7d4b2e7b21fec4f61ab3d6b835a5a87652defc5f8d442c0cfee02a29f74' '8556258b3220197f50a5987371cada65d9a4a4f427a0ef00270c8444c27ccb4b' 'dbbd59ba6f8188e1db48761eff8e4a70e08f8afe1b0521a394811c6c0dc03de4' '841c37c75c857c7fb0a72a81f5769ea38220ce82cd6b7a1a57b667ff6577acbc' '8e2e9e2f0ef01dead9aed138a3147100a5970a5551e21e9e7be1f5a4061eb263' 'e5a84386e0bb5cd9774e5b19fc272d6d77c9acfb0806eeac182c827e6db75948' 'cfdab3b6da95c5f4476a8ce70f227f35991544d38c0222a77191c90fb7d6aa84' '95d5088308f429d86861866b8db1458139855b3c40d96884448f25ae15f808b1' 'cfdd184773a30a5e5a5e7e79d70aff91e1d56d2ae1aaae0f856f5fb0704ee5de' 'a01153c26e997558c4326b24d84f2c3abf51d44b5982143000bb637ae02cc024' 'ca4ec9e70c223c45e50bf60c24f11bdb1c391d53f5ab636f29371763fabf2e7d' 'c72e225cb07e988e712453bec23e1ccc71070b163a426f40c884de9746e7dcf6')
+sha256sums=('0f0aa7d4b2e7b21fec4f61ab3d6b835a5a87652defc5f8d442c0cfee02a29f74' 'c726313c14b74c0d8fcd67050664a5e8d97aa70cf969c45018c9179fc853daa1' 'e1130dc55cf4a2cda2826721bad11b2cfadd09139656f2a9b062da81a5b3ff9f' '0bc2d983d5fd7d2667b77cb6830ef8b39f07d9191849463c95c1ec9644ad88f7' '8e2e9e2f0ef01dead9aed138a3147100a5970a5551e21e9e7be1f5a4061eb263' '77481557e0af517ac30c19a3f4275747a062ba40b704ebcf683afa3275f0c3c5' '4740858f8177418c90125dc2832a1954f46dad3ce812c7896621a6bfcd7e52f5' 'f084a1e4ab2e1202a66dcf58a3d89d66059d57529874cc592bf1bd7962e661f8' 'cfdab3b6da95c5f4476a8ce70f227f35991544d38c0222a77191c90fb7d6aa84' '95d5088308f429d86861866b8db1458139855b3c40d96884448f25ae15f808b1' 'cfdd184773a30a5e5a5e7e79d70aff91e1d56d2ae1aaae0f856f5fb0704ee5de' 'a01153c26e997558c4326b24d84f2c3abf51d44b5982143000bb637ae02cc024' 'ca4ec9e70c223c45e50bf60c24f11bdb1c391d53f5ab636f29371763fabf2e7d' 'c72e225cb07e988e712453bec23e1ccc71070b163a426f40c884de9746e7dcf6')
 
 package() {
   local f
-  for f in launcher.py welcome.py control_center.py nanoos_ui.py nanoos_theme.py nanoos_platform.py; do
+  for f in launcher.py welcome.py control_center.py nanoos_ui.py nanoos_theme.py nanoos_platform.py nanoos_live.py; do
     install -Dm644 "$f" "$pkgdir/usr/lib/nanoos-apps/$f"
   done
+  install -Dm755 nanoos-boot-config "$pkgdir/usr/lib/nanoos-apps/nanoos-boot-config"
   install -Dm755 nanoos-welcome "$pkgdir/usr/bin/nanoos-welcome"
   install -Dm755 nanoos-control-center "$pkgdir/usr/bin/nanoos-control-center"
   install -Dm644 org.nanoos.Welcome.desktop "$pkgdir/usr/share/applications/org.nanoos.Welcome.desktop"

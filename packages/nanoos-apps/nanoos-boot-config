@@ -1,0 +1,171 @@
+#!/usr/bin/python3
+"""NanoOS boot settings (run as root through pkexec by the Control Center).
+
+    nanoos-boot-config status              kernels in the GRUB menu, default, timeout
+    nanoos-boot-config default <kernel>    boot <kernel> (e.g. linux-zen) by default
+    nanoos-boot-config default auto        boot the first menu entry again
+    nanoos-boot-config timeout <seconds>   boot menu timeout (0-30)
+"""
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+DEFAULTS = Path("/etc/default/grub")
+GRUB_CFG = Path("/boot/grub/grub.cfg")
+GRUBENV = Path("/boot/grub/grubenv")
+
+
+def fail(message):
+    print(f"error: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def set_default(text, key, value):
+    """Exactly one active KEY=value line (same rule as nanoos-grub-display)."""
+    line = f"{key}={value}"
+    out, placed = [], False
+    for current in text.splitlines():
+        if re.match(rf"^#?\s*{key}=", current):
+            if not placed:
+                out.append(line)
+                placed = True
+            elif current.lstrip().startswith("#"):
+                out.append(current)
+            continue
+        out.append(current)
+    if not placed:
+        out.append(line)
+    return "\n".join(out) + "\n"
+
+
+def defaults_value(key):
+    try:
+        match = re.search(rf'(?m)^{key}=(.*)$', DEFAULTS.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    return match.group(1).strip().strip('"') if match else None
+
+
+def menu_entries():
+    """[(kernel package, entry path for grub-set-default)] from grub.cfg.
+
+    The first top-level entry and the "Advanced options" submenu entries
+    look like "... with Linux linux-zen" (or "..., with Linux linux-zen").
+    Fallback and recovery entries are skipped.
+    """
+    try:
+        text = GRUB_CFG.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    entries, submenu = [], None
+    depth = 0
+    for line in text.splitlines():
+        stripped = line.strip()
+        sub = re.match(r"submenu '([^']*)'.*?\$menuentry_id_option '([^']+)'", stripped)
+        if sub:
+            submenu = sub.group(2)
+            depth = 1
+            continue
+        entry = re.match(r"menuentry '([^']*)'.*?\$menuentry_id_option '([^']+)'", stripped)
+        if entry and submenu and depth:
+            title, entry_id = entry.groups()
+            if "fallback" in title or "recovery" in title:
+                continue
+            kernel = re.search(r"with Linux (\S+)", title)
+            if kernel:
+                entries.append((kernel.group(1), f"{submenu}>{entry_id}"))
+        if stripped == "}" and line.startswith("}"):
+            submenu, depth = None, 0
+    return entries
+
+
+def saved_entry():
+    try:
+        for line in GRUBENV.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("saved_entry="):
+                return line.split("=", 1)[1]
+    except OSError:
+        pass
+    return ""
+
+
+def regenerate():
+    tool = shutil.which("nanoos-grub-display")
+    command = [tool, "--update"] if tool else ["grub-mkconfig", "-o", str(GRUB_CFG)]
+    print("==> Updating the GRUB boot menu…", flush=True)
+    if subprocess.run(command).returncode != 0:
+        fail("the GRUB boot menu could not be regenerated")
+
+
+def write_defaults(key, value):
+    text = DEFAULTS.read_text(encoding="utf-8")
+    updated = set_default(text, key, value)
+    if updated != text:
+        DEFAULTS.write_text(updated, encoding="utf-8")
+        return True
+    return False
+
+
+def status():
+    default = defaults_value("GRUB_DEFAULT") or "0"
+    entries = menu_entries()
+    current = ""
+    if default == "saved":
+        saved = saved_entry()
+        current = next((kernel for kernel, path in entries if path == saved), "")
+    print(json.dumps({
+        "entries": [kernel for kernel, _ in entries],
+        "default": current or ("auto" if default in ("0", "saved") else default),
+        "timeout": defaults_value("GRUB_TIMEOUT") or "5",
+    }))
+
+
+def main():
+    args = sys.argv[1:]
+    if not args:
+        fail(__doc__.strip())
+    if os.geteuid() != 0:
+        fail("run as root (pkexec nanoos-boot-config …)")
+    if not DEFAULTS.is_file() or not GRUB_CFG.is_file():
+        fail("GRUB is not installed on this system")
+    command = args[0]
+    if command == "status":
+        status()
+        return
+    if command == "timeout" and len(args) == 2:
+        if not args[1].isdigit() or not 0 <= int(args[1]) <= 30:
+            fail("timeout must be 0-30 seconds")
+        if write_defaults("GRUB_TIMEOUT", args[1]):
+            regenerate()
+        print(f":: NanoOS: boot menu timeout set to {args[1]} s.")
+        return
+    if command == "default" and len(args) == 2:
+        kernel = args[1]
+        if kernel == "auto":
+            if write_defaults("GRUB_DEFAULT", "0"):
+                regenerate()
+            print(":: NanoOS: the first boot menu entry starts by default again.")
+            return
+        if not re.fullmatch(r"linux[a-z0-9.-]*", kernel):
+            fail(f"not a kernel package: {kernel}")
+        if write_defaults("GRUB_DEFAULT", "saved") or not menu_entries():
+            regenerate()
+        path = dict(menu_entries()).get(kernel)
+        if not path:
+            regenerate()  # a kernel installed since the menu was generated
+            path = dict(menu_entries()).get(kernel)
+        if not path:
+            fail(f"{kernel} is not in the GRUB boot menu")
+        if subprocess.run(["grub-set-default", path]).returncode != 0:
+            fail("grub-set-default failed")
+        print(f":: NanoOS: {kernel} now boots by default.")
+        return
+    fail(__doc__.strip())
+
+
+if __name__ == "__main__":
+    main()

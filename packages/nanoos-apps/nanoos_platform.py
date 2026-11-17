@@ -450,6 +450,19 @@ def secure_boot_status():
             "status": "BIOS / EFI variables unavailable",
         }
 
+    # Without mokutil, read the SecureBoot EFI variable directly: four
+    # attribute bytes, then one byte that is 1 when Secure Boot is on.
+    for variable in variables.glob("SecureBoot-*"):
+        try:
+            data = variable.read_bytes()
+        except OSError:
+            continue
+        if len(data) >= 5:
+            return {
+                "tool": "efivars",
+                "status": "Enabled" if data[4] == 1 else "Disabled",
+            }
+
     return {
         "tool": None,
         "status": (

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """NanoOS Control Center.
 
-System overview, CPU Boost modes, gaming tools, storage, snapshots,
-updates and boot details. Built on the shared NanoOS UI kit so it looks
+Live system dashboard, CPU Boost modes, gaming tools, kernels and boot,
+storage, snapshots, an update center and system details. Built on the shared NanoOS UI kit so it looks
 and works like NanoOS Welcome: the same shell, cards and buttons, and
 administrator actions run through pkexec with live output in the panel.
 """
@@ -18,18 +18,21 @@ import time
 from pathlib import Path
 
 try:
-    from PySide6.QtCore import QProcess, QThread, Signal
+    from PySide6.QtCore import QProcess, QThread, QTimer, Signal
     from PySide6.QtGui import QIcon
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QGridLayout, QInputDialog, QWidget
 except ImportError:
     print("NanoOS Control Center requires PySide6 (pacman -S pyside6).", file=sys.stderr)
     sys.exit(1)
 
 import nanoos_platform as platform_api
-from nanoos_ui import ActionCard, NanoButton, NanoShell
+import nanoos_live as live
+from nanoos_ui import ActionCard, NanoShell, StatTile
 
 APP_NAME = "NanoOS Control Center"
-VERSION = "V2"
+VERSION = "2.0"
+BOOT_CONFIG = "/usr/lib/nanoos-apps/nanoos-boot-config"
+GRUB_DISPLAY = "/usr/bin/nanoos-grub-display"
 CPU_BOOST = "/usr/local/bin/nanoos-cpu-boost"
 CPU_BOOST_STATE = Path("/etc/nanoos/cpu-boost.conf")
 GAMEMODE_APP = "/usr/bin/nanoos-gamemode"
@@ -165,6 +168,122 @@ def pacman_installed():
     return set(result.stdout.split())
 
 
+KERNEL_EXTRAS = ("-headers", "-docs", "-firmware", "-api-headers")
+KERNEL_NAMES = {
+    "linux": "Linux", "linux-lts": "Linux LTS", "linux-zen": "Linux Zen",
+    "linux-hardened": "Linux Hardened", "linux-rt": "Linux RT", "linux-rt-lts": "Linux RT LTS",
+    "linux-nanoos-gaming": "NanoOS Gaming Kernel", "linux-nanoos-fluffy": "NanoOS Fluffy Kernel",
+}
+
+
+def package_versions():
+    """{package: version} of every installed package (one pacman call)."""
+    result = platform_api.run(["pacman", "-Q"])
+    versions = {}
+    for line in result.stdout.splitlines():
+        name, _, version = line.partition(" ")
+        versions[name] = version
+    return versions
+
+
+def grub_default_kernel():
+    """Kernel package GRUB boots by default, or "" for the first entry."""
+    text = platform_api.read_file("/etc/default/grub")
+    match = re.search(r'(?m)^GRUB_DEFAULT=["\']?([^"\'\n]*)', text)
+    if not match or match.group(1) != "saved":
+        return ""
+    for line in platform_api.read_file("/boot/grub/grubenv").splitlines():
+        if line.startswith("saved_entry="):
+            # saved_entry=<submenu id>><entry id>; the kernel is in the entry id.
+            entry = line.split("=", 1)[1].rsplit(">", 1)[-1]
+            found = re.match(r"gnulinux-(.+?)-advanced-", entry)
+            return found.group(1) if found else ""
+    return ""
+
+
+def grub_timeout():
+    match = re.search(r'(?m)^GRUB_TIMEOUT=["\']?(\d+)', platform_api.read_file("/etc/default/grub"))
+    return match.group(1) if match else None
+
+
+def boot_report(versions):
+    """Installed kernels with headers / NVIDIA driver status, GRUB settings."""
+    module_dirs = {}
+    for directory in Path("/usr/lib/modules").glob("*"):
+        base = platform_api.read_file(str(directory / "pkgbase")).strip()
+        if base:
+            module_dirs[base] = directory
+    try:
+        running = Path(f"/usr/lib/modules/{os.uname().release}/pkgbase").read_text().strip()
+    except OSError:
+        running = ""
+    nvidia_dkms = any(name.startswith("nvidia") and name.endswith("-dkms") for name in versions)
+    dkms = any(name.endswith("-dkms") for name in versions)
+    kernels = []
+    for name in sorted(versions):
+        if not re.fullmatch(r"linux(-[a-z0-9]+)*", name) or name.endswith(KERNEL_EXTRAS) \
+                or name.startswith("linux-firmware") or not Path(f"/boot/vmlinuz-{name}").is_file():
+            continue
+        modules = module_dirs.get(name)
+        nvidia = None
+        if nvidia_dkms and modules is not None:
+            nvidia = any(modules.glob("updates/dkms/nvidia.ko*")) or any(modules.glob("extramodules/nvidia.ko*"))
+        kernels.append({
+            "name": name,
+            "title": KERNEL_NAMES.get(name, name),
+            "version": versions[name],
+            "headers": f"{name}-headers" in versions,
+            "nvidia": nvidia,
+            "running": name == running,
+        })
+    display = ""
+    if os.path.isfile(GRUB_DISPLAY):
+        display = platform_api.run([GRUB_DISPLAY, "--status"]).stdout.strip()
+    return {
+        "kernels": kernels,
+        "dkms": dkms,
+        "default": grub_default_kernel(),
+        "timeout": grub_timeout(),
+        "grub": Path("/etc/default/grub").is_file(),
+        "display": display,
+        # The running kernel's modules were replaced by an update.
+        "reboot_needed": not Path(f"/usr/lib/modules/{os.uname().release}").is_dir(),
+    }
+
+
+def last_full_update():
+    """When `pacman -Syu` last ran, from /var/log/pacman.log."""
+    stamp = ""
+    try:
+        with open("/var/log/pacman.log", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                if "starting full system upgrade" in line:
+                    stamp = line[1:line.index("]")]
+    except (OSError, ValueError):
+        return ""
+    return stamp[:16].replace("T", " ") if stamp else ""
+
+
+def parse_updates(lines):
+    """checkupdates lines -> [(name, old, new)]."""
+    out = []
+    for line in lines or ():
+        match = re.match(r"(\S+)\s+(\S+)\s+->\s+(\S+)", line)
+        if match:
+            out.append(match.groups())
+    return out
+
+
+def update_group(name):
+    if name.startswith(("nanoos-", "linux-nanoos")):
+        return "nanoos"
+    if (re.fullmatch(r"linux(-[a-z0-9]+)*", name) and not name.endswith(("-docs", "-api-headers"))) \
+            or name.startswith(("nvidia", "linux-firmware", "mesa", "vulkan-", "lib32-nvidia",
+                                "lib32-mesa", "systemd", "glibc", "amd-ucode", "intel-ucode")):
+        return "core"
+    return "other"
+
+
 def collect_report():
     """Everything the pages show. Runs in a worker thread."""
     started = time.monotonic()
@@ -186,7 +305,9 @@ def collect_report():
         "mirrors": platform_api.mirror_status(),
         "secure_boot": platform_api.secure_boot_status(),
         "boot_managers": platform_api.boot_manager_status(),
-        "packages": pacman_installed(),
+        "packages": set(versions := package_versions()),
+        "boot": boot_report(versions),
+        "last_update": last_full_update(),
         "cpu_mode": saved_cpu_mode(),
         "epp": cpu_epp_summary(),
         "live": platform_api.running_live_iso(),
@@ -250,21 +371,32 @@ class ControlCenter(NanoShell):
     APP_NAME = APP_NAME
     BRAND_SUB = "CONTROL CENTER"
     EYEBROW = "NANOOS  /  CONTROL CENTER"
-    FOOTER = f"NANOOS CONTROL CENTER  ·  {VERSION}"
+    FOOTER = "NANOOS CONTROL CENTER"
     MENU = [
-        "Overview", "Performance", *(["Gaming"] if GAMING else []), "Storage",
-        "Snapshots", "Updates", "System",
+        "Overview", "Performance", *(["Gaming"] if GAMING else []), "Kernels & Boot",
+        "Storage", "Snapshots", "Updates", "System",
     ]
+    NAV_ICONS = {
+        "Overview": "utilities-system-monitor",
+        "Performance": "preferences-system-performance",
+        "Gaming": "applications-games",
+        "Kernels & Boot": ["preferences-system-linux", "cpu"],
+        "Storage": "drive-harddisk",
+        "Snapshots": "document-save-all",
+        "Updates": "system-software-update",
+        "System": "computer",
+    }
     START_PAGE = "Overview"
     LOG_PLACEHOLDER = "Output from updates, installs and CPU Boost changes appears here."
 
     DESCRIPTIONS = {
-        "Overview": "Your NanoOS system at a glance.",
+        "Overview": "Your NanoOS system at a glance, live.",
+        "Kernels & Boot": "Installed kernels, their drivers, and what the boot menu starts by default.",
         "Performance": "Choose how eagerly the CPU boosts. Modes use AMD P-State EPP and are kept across reboots.",
         "Gaming": "The NanoOS gaming toolkit and its status.",
         "Storage": "Disks, partitions and how full they are.",
         "Snapshots": "Roll back a bad update with filesystem snapshots (Btrfs + snapper).",
-        "Updates": "Keep NanoOS current. Updates run with live output in the panel below.",
+        "Updates": "Everything waiting to be updated, NanoOS first. Updates run with live output below.",
         "System": "Kernel, boot and security details.",
     }
 
@@ -274,11 +406,20 @@ class ControlCenter(NanoShell):
         self.worker = None
         self.update_worker = None
         self.keep_status = False
+        self.sampler = live.LiveSampler()
+        self.nvidia_process = None
+        self.gpu_reading = None
         super().__init__()
+        self.live_timer = QTimer(self)
+        self.live_timer.setInterval(1000)
+        self.live_timer.timeout.connect(self.live_tick)
+        self.live_timer.start()
+        self.live_tick()
         self.refresh()
 
     # ------------------------------------------------------------ pages
     def build_pages(self):
+        self.build_dashboard()
         for name in self.MENU:
             page, layout = self.new_page(name)
             layout.addWidget(ActionCard("Reading system status…", "This takes a moment."))
@@ -286,19 +427,101 @@ class ControlCenter(NanoShell):
             self.add_page(name, page)
 
     def new_page(self, name):
-        page, layout = self.page_header(name, self.DESCRIPTIONS[name])
-        refresh = NanoButton("Refresh system information", "secondary")
-        refresh.clicked.connect(self.refresh)
-        layout.addWidget(refresh)
+        page, layout = self.page_header(name, self.DESCRIPTIONS[name],
+                                        action=("Refresh", self.refresh))
         return page, layout
 
-    def info(self, layout, title, value):
-        """A value card with the same 'Copy value' action Welcome uses."""
+    def info(self, layout, title, value, icon=None):
+        """A value card with the same Copy action Welcome uses."""
         value = str(value) if value not in (None, "") else "Unavailable"
-        layout.addWidget(ActionCard(
-            title, value, "Copy value",
+        card = ActionCard(
+            title, value, "Copy",
             lambda value=value, title=title: self.copy_value(title, value),
-        ))
+            icon=icon,
+        )
+        layout.addWidget(card)
+        return card
+
+    # ------------------------------------------------------------ dashboard
+    def build_dashboard(self):
+        """Live tiles. Created once and moved into each rebuilt Overview."""
+        self.dashboard = QWidget()
+        grid = QGridLayout(self.dashboard)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(12)
+        self.tile_cpu = StatTile("Processor", "preferences-devices-cpu")
+        self.tile_gpu = StatTile("Graphics", "video-display", color="#8de0b0")
+        self.tile_memory = StatTile("Memory", "media-flash", color="#b59cf0")
+        self.tile_network = StatTile("Network", "network-wired", maximum=None, color="#f2c66d")
+        for index, tile in enumerate((self.tile_cpu, self.tile_gpu, self.tile_memory, self.tile_network)):
+            grid.addWidget(tile, index // 2, index % 2)
+        self.gpu_mode = "nvidia" if live.nvidia_present() and shutil.which("nvidia-smi") else \
+            "amd" if self.sampler.amd_gpu else None
+
+    def dashboard_visible(self):
+        return (self.isVisible() and not self.isMinimized()
+                and self.current_page_name() == "Overview")
+
+    def live_tick(self):
+        # Sample only while the dashboard is on screen; the CPU and network
+        # readings are deltas, so take one silently to prime them.
+        if not self.dashboard_visible():
+            self.sampler.cpu_percent()
+            self.sampler.network_rates()
+            return
+        cpu = self.sampler.cpu_percent()
+        peak, average = self.sampler.cpu_clock_ghz()
+        temp = self.sampler.cpu_temp()
+        if cpu is not None:
+            details = [f"{average:.2f} GHz avg" if average else "",
+                       f"{temp:.0f} °C" if temp is not None else ""]
+            self.tile_cpu.update_value(f"{cpu:.0f}%", "  ·  ".join(d for d in details if d), cpu)
+        used, total, swap_used, swap_total = self.sampler.memory()
+        if total:
+            detail = f"{human_bytes(used)} of {human_bytes(total)}"
+            if swap_used > 64 * 1024 * 1024:
+                detail += f"  ·  swap {human_bytes(swap_used)}"
+            self.tile_memory.update_value(f"{used / total * 100:.0f}%", detail, used / total * 100)
+        down, up = self.sampler.network_rates()
+        if down is not None:
+            self.tile_network.update_value(
+                f"↓ {live.rate_text(down)}", f"↑ {live.rate_text(up)}", down)
+        self.sample_gpu()
+
+    def sample_gpu(self):
+        if self.gpu_mode == "amd":
+            self.show_gpu(self.sampler.amd_gpu_sample())
+        elif self.gpu_mode == "nvidia":
+            if self.nvidia_process is not None:
+                return  # previous query still running; never pile them up
+            process = QProcess(self)
+            process.finished.connect(lambda *_a, p=process: self.nvidia_done(p))
+            process.errorOccurred.connect(lambda *_a, p=process: self.nvidia_done(p, failed=True))
+            self.nvidia_process = process
+            process.start("nvidia-smi", live.NVIDIA_QUERY)
+        else:
+            self.tile_gpu.update_value("–", "No GPU load reading on this system")
+
+    def nvidia_done(self, process, failed=False):
+        if self.nvidia_process is not process:
+            return
+        self.nvidia_process = None
+        text = "" if failed else process.readAllStandardOutput().data().decode(errors="replace")
+        process.deleteLater()
+        self.show_gpu(live.parse_nvidia(text))
+
+    def show_gpu(self, reading):
+        if not reading or reading.get("load") is None:
+            self.tile_gpu.update_value("–", "GPU reading unavailable")
+            return
+        details = []
+        if reading.get("temp") is not None:
+            details.append(f"{reading['temp']:.0f} °C")
+        if reading.get("vram_total"):
+            details.append(f"VRAM {human_bytes(reading['vram_used'] or 0)} of {human_bytes(reading['vram_total'])}")
+        if reading.get("power") is not None:
+            details.append(f"{reading['power']:.0f} W")
+        self.tile_gpu.update_value(f"{reading['load']:.0f}%", "  ·  ".join(details), reading["load"])
 
     # ------------------------------------------------------------ data flow
     def refresh(self):
@@ -337,18 +560,26 @@ class ControlCenter(NanoShell):
         for builder in (
             self.build_overview, self.build_performance,
             *([self.build_gaming] if GAMING else []),
-            self.build_storage, self.build_snapshots, self.build_updates,
+            self.build_boot, self.build_storage, self.build_snapshots, self.build_updates,
             self.build_system,
         ):
             builder(report)
         self.footer_label.setText(
             f"NANOOS CONTROL CENTER  ·  {VERSION}\nUPDATED {time.strftime('%H:%M:%S')}"
         )
+        self.apply_start_page()
         if self.keep_status:
             self.keep_status = False      # leave the task result visible
         elif not self.task_running():
             self.status.setText(f"{self.current_page_name()}  ·  Ready")
         self.lock_if_busy()
+
+    def apply_start_page(self):
+        """`nanoos-control-center --page Updates` opens that page once."""
+        wanted = getattr(self, "requested_page", None)
+        if wanted and wanted in self.pages:
+            self.requested_page = None
+            self.show_page(wanted)
 
     def lock_if_busy(self):
         # Rebuilt pages contain fresh, enabled buttons; keep them locked
@@ -365,7 +596,7 @@ class ControlCenter(NanoShell):
         if self.updates == "checking":
             return "Checking for updates…"
         if self.updates is None:
-            return "Update check unavailable (install pacman-contrib for update counts)."
+            return "Update check unavailable (needs pacman-contrib)."
         if not self.updates:
             return "NanoOS is up to date."
         count = len(self.updates)
@@ -373,38 +604,31 @@ class ControlCenter(NanoShell):
 
     def build_overview(self, r):
         page, layout = self.new_page("Overview")
-        live = "  ·  running from live media" if r["live"] else ""
+        live_media = "  ·  running from live media" if r["live"] else ""
         layout.addWidget(ActionCard(
             r["os"],
             f"Kernel {r['kernel'].get('running') or 'unknown'}  ·  up {r['uptime']}  ·  "
-            f"signed in as {r['user']}{live}",
-            "Open System", lambda: self.show_page("System"),
+            f"signed in as {r['user']}{live_media}",
+            icon="nanoos",
         ))
+        layout.addWidget(self.dashboard)
 
         layout.addWidget(self.group_label("Hardware"))
         cpu = r["cpu"]
         self.info(layout, "Processor",
                   f"{cpu.get('model', 'Unknown')}  ·  {cpu.get('architecture', '')}  ·  "
-                  f"tuning profile: {r['cpu_profile']}")
+                  f"tuning profile: {r['cpu_profile']}", icon="preferences-devices-cpu")
         gpus = self.ranked_gpus(r)
-        if gpus:
-            self.info(layout, "Graphics", "   ·   ".join(
-                f"{name} (driver: {driver})" if driver else name for name, driver in gpus))
-        else:
-            self.info(layout, "Graphics", "No GPU detected")
-
-        used, total = r["memory"]
-        layout.addWidget(ActionCard(
-            "Memory",
-            f"{human_bytes(used)} of {human_bytes(total)} used  ·  {human_bytes(total - used)} available",
-            fraction=used / total if total else None,
-        ))
+        self.info(layout, "Graphics", "   ·   ".join(
+            f"{name} (driver: {driver})" if driver else name for name, driver in gpus)
+            if gpus else "No GPU detected", icon="video-display")
         usage = r["root_usage"]
         layout.addWidget(ActionCard(
             "System disk",
             f"{human_bytes(usage.used)} of {human_bytes(usage.total)} used  ·  {human_bytes(usage.free)} free",
             "Open Storage", lambda: self.show_page("Storage"),
             fraction=usage.used / usage.total if usage.total else None,
+            icon="drive-harddisk",
         ))
 
         layout.addWidget(self.group_label("Status"))
@@ -416,13 +640,33 @@ class ControlCenter(NanoShell):
              else "Unavailable on this CPU (needs the amd-pstate-epp driver).")
             + (f"  ·  power hint: {epp['current']}" if epp.get("current") else ""),
             "Open Performance", lambda: self.show_page("Performance"),
+            icon="preferences-system-performance",
         ))
-        layout.addWidget(ActionCard(
+        updates_card = ActionCard(
             "Updates", self.updates_summary(),
             "Open Updates", lambda: self.show_page("Updates"),
-        ))
+            icon="system-software-update",
+        )
+        if isinstance(self.updates, list) and self.updates:
+            updates_card.set_badge(str(len(self.updates)), "info")
+        elif self.updates == []:
+            updates_card.set_badge("Up to date", "ok")
+        layout.addWidget(updates_card)
+        if r["boot"]["reboot_needed"]:
+            layout.addWidget(self.restart_card())
         layout.addStretch(1)
         self.add_page("Overview", page)
+
+    def restart_card(self):
+        card = ActionCard(
+            "Restart to finish updating",
+            "The running kernel was updated. Restart to use the new kernel and drivers "
+            "(USB devices and new apps may not work until then).",
+            "Restart now", lambda: self.launch(["systemctl", "reboot"], "restart"),
+            icon="system-reboot",
+        )
+        card.set_badge("Restart needed", "warn")
+        return card
 
     @staticmethod
     def ranked_gpus(r):
@@ -504,15 +748,19 @@ class ControlCenter(NanoShell):
                 "Install", lambda: self.install_packages(missing, "gaming tools"),
                 enabled=not r["live"],
             ))
+        icons = {"nanoos-gamemode": "nanoos-gamemode", "obs-studio": "com.obsproject.Studio"}
         for package, title, description in GAMING_TOOLS:
             present = package in installed
-            layout.addWidget(ActionCard(
-                title,
-                f"{description}  ·  {'Installed' if present else 'Not installed'}",
-                "Installed" if present else "Install",
+            card = ActionCard(
+                title, description, "Install",
                 lambda package=package, title=title: self.install_packages([package], title),
-                enabled=not present and not r["live"],
-            ))
+                enabled=not r["live"],
+                icon=[icons.get(package, package), "applications-games"],
+            )
+            if present:
+                card.set_badge("Installed", "ok")
+                card.set_action(visible=False)
+            layout.addWidget(card)
         layout.addStretch(1)
         self.add_page("Gaming", page)
 
@@ -527,6 +775,100 @@ class ControlCenter(NanoShell):
         self.run_privileged(
             [pacman, "-S", "--needed", "--noconfirm", *packages], title, verb="Installing",
         )
+
+    # ------------------------------------------------------------ Kernels & Boot
+    def build_boot(self, r):
+        page, layout = self.new_page("Kernels & Boot")
+        boot = r["boot"]
+        can_change = boot["grub"] and not r["live"] and os.path.isfile(BOOT_CONFIG)
+        if boot["reboot_needed"]:
+            layout.addWidget(self.restart_card())
+        layout.addWidget(self.group_label("Installed kernels"))
+        default = boot["default"]
+        for kernel in boot["kernels"]:
+            parts = [f"Version {kernel['version']}",
+                     "headers installed" if kernel["headers"] else "no headers"]
+            if kernel["nvidia"] is not None:
+                parts.append("NVIDIA driver built" if kernel["nvidia"] else "NVIDIA driver missing")
+            card = ActionCard(
+                kernel["title"], "  ·  ".join(parts), "Boot by default",
+                lambda name=kernel["name"], title=kernel["title"]: self.set_boot_default(name, title),
+                enabled=can_change, icon=["preferences-system-linux", "cpu"],
+            )
+            if kernel["nvidia"] is False or (boot["dkms"] and not kernel["headers"]):
+                card.set_badge("Driver missing", "bad")
+            elif kernel["running"]:
+                card.set_badge("Running", "ok")
+            if kernel["name"] == default:
+                card.set_badge("Running · Default" if kernel["running"] else "Default", "ok")
+                card.set_action(visible=False)
+            layout.addWidget(card)
+        if boot["dkms"] and any(not k["headers"] or k["nvidia"] is False for k in boot["kernels"]):
+            layout.addWidget(ActionCard(
+                "Repair kernel drivers",
+                "Install the missing headers so DKMS rebuilds the driver for every kernel.",
+                "Repair", lambda: self.repair_drivers(boot), enabled=not r["live"],
+                icon="tools-wizard",
+            ))
+        if os.path.isfile(WELCOME_APP):
+            layout.addWidget(ActionCard(
+                "Install another kernel",
+                "LTS, Zen, Hardened and real-time kernels are one click away in NanoOS Welcome.",
+                "Open Welcome", lambda: self.launch([WELCOME_APP], "NanoOS Welcome"),
+                icon="nanoos-welcome",
+            ))
+
+        layout.addWidget(self.group_label("Boot menu"))
+        default_card = ActionCard(
+            "Default kernel",
+            (KERNEL_NAMES.get(default, default) + " starts unless you pick another one.") if default
+            else "The first menu entry starts (the newest default kernel).",
+            "Use first entry" if default else None,
+            lambda: self.set_boot_default("auto", "First entry"),
+            enabled=can_change, icon="system-run",
+        )
+        layout.addWidget(default_card)
+        timeout = boot["timeout"]
+        layout.addWidget(ActionCard(
+            "Menu timeout",
+            f"The boot menu waits {timeout} s before starting the default." if timeout
+            else "Boot menu timeout not set.",
+            "Change", self.change_boot_timeout, enabled=can_change, icon="chronometer",
+        ))
+        if boot["display"]:
+            layout.addWidget(ActionCard(
+                "Menu resolution",
+                boot["display"].replace(" -> ", "  →  "),
+                "Re-detect", lambda: self.run_privileged([GRUB_DISPLAY], "Boot menu resolution"),
+                enabled=not r["live"], icon="video-display",
+            ))
+        if not boot["grub"]:
+            layout.addWidget(ActionCard("GRUB not detected",
+                                        "Boot settings are only available with the GRUB boot loader."))
+        layout.addStretch(1)
+        self.add_page("Kernels & Boot", page)
+
+    def set_boot_default(self, kernel, title):
+        self.run_privileged([BOOT_CONFIG, "default", kernel], f"Default kernel: {title}", verb="Applying")
+
+    def change_boot_timeout(self):
+        current = (self.report or {}).get("boot", {}).get("timeout") or "5"
+        choices = ["0", "1", "2", "3", "5", "10", "15", "30"]
+        value, ok = QInputDialog.getItem(
+            self, "Boot menu timeout", "Seconds before the default entry starts:",
+            choices, choices.index(current) if current in choices else 4, False,
+        )
+        if ok and value != current:
+            self.run_privileged([BOOT_CONFIG, "timeout", value], f"Boot menu timeout {value} s",
+                                verb="Applying")
+
+    def repair_drivers(self, boot):
+        missing = [f"{k['name']}-headers" for k in boot["kernels"] if not k["headers"]]
+        if missing:
+            self.install_packages(missing, "Kernel driver repair")
+        else:
+            # Headers are there but a module is missing: rebuild with DKMS.
+            self.run_privileged(["dkms", "autoinstall"], "Kernel driver repair")
 
     # ------------------------------------------------------------ Storage
     def build_storage(self, r):
@@ -577,7 +919,7 @@ class ControlCenter(NanoShell):
         page, layout = self.new_page("Snapshots")
         snap = r["snapshots"]
         fs = snap.get("filesystem", "unknown")
-        self.info(layout, "Root filesystem", fs)
+        self.info(layout, "Root filesystem", fs, icon="drive-harddisk")
         if not snap.get("snapper"):
             if fs == "btrfs":
                 layout.addWidget(ActionCard(
@@ -610,26 +952,67 @@ class ControlCenter(NanoShell):
     # ------------------------------------------------------------ Updates
     def build_updates(self, r):
         page, layout = self.new_page("Updates")
-        has_updates = isinstance(self.updates, list) and bool(self.updates)
-        layout.addWidget(ActionCard(
-            "System update",
-            self.updates_summary()
-            + ("  ·  Updates are disabled on the live installer." if r["live"] else ""),
-            "Update now", self.run_update,
+        updates = parse_updates(self.updates) if isinstance(self.updates, list) else []
+        last = r.get("last_update")
+        summary = self.updates_summary() + (f"  ·  last update {last}" if last else "")
+        if r["live"]:
+            summary += "  ·  Updates are disabled on the live installer."
+        main = ActionCard(
+            "System update", summary, "Update now", self.run_update,
             enabled=not r["live"] and self.updates != "checking",
-        ))
-        if has_updates:
+            icon="system-software-update",
+        )
+        if updates:
+            main.set_badge(f"{len(updates)} available", "info")
+        elif self.updates == []:
+            main.set_badge("Up to date", "ok")
+        layout.addWidget(main)
+        if r["boot"]["reboot_needed"]:
+            layout.addWidget(self.restart_card())
+        if self.updates is None and not shutil.which("checkupdates"):
             layout.addWidget(ActionCard(
-                "Available updates",
-                "See every package and version that would be upgraded.",
-                "Show list", lambda: self.show_text("\n".join(self.updates)),
+                "Enable update checks",
+                "The update list needs pacman-contrib (checkupdates).",
+                "Install", lambda: self.install_packages(["pacman-contrib"], "pacman-contrib"),
+                enabled=not r["live"], icon="package-x-generic",
             ))
         layout.addWidget(ActionCard(
             "Check for updates",
             "Look for new packages without installing anything.",
             "Check again", self.check_updates,
-            enabled=self.updates != "checking",
+            enabled=self.updates != "checking", icon="view-refresh",
         ))
+
+        groups = {"nanoos": [], "core": [], "other": []}
+        for name, old, new in updates:
+            groups[update_group(name)].append((name, old, new))
+        if groups["nanoos"]:
+            layout.addWidget(self.group_label(f"NanoOS ({len(groups['nanoos'])})"))
+            for name, old, new in groups["nanoos"]:
+                layout.addWidget(ActionCard(
+                    name, f"{old}  →  {new}", icon=["nanoos", "package-x-generic"],
+                    badge=("NanoOS", "info"),
+                ))
+        if groups["core"]:
+            layout.addWidget(self.group_label(f"Kernel, drivers and core system ({len(groups['core'])})"))
+            for name, old, new in groups["core"]:
+                card = ActionCard(name, f"{old}  →  {new}", icon=["preferences-system-linux", "package-x-generic"])
+                if re.fullmatch(r"linux(-[a-z0-9]+)*", name) or name.startswith(("nvidia", "systemd", "glibc")):
+                    card.set_badge("Restart after", "warn")
+                layout.addWidget(card)
+        if groups["other"]:
+            other = groups["other"]
+            layout.addWidget(self.group_label(f"Apps and libraries ({len(other)})"))
+            shown = other[:60]
+            text = "\n".join(f"{name}   {old}  →  {new}" for name, old, new in shown)
+            if len(other) > len(shown):
+                text += f"\n… and {len(other) - len(shown)} more"
+            layout.addWidget(ActionCard(
+                f"{len(other)} package{'s' if len(other) != 1 else ''}", text,
+                "Show all", lambda: self.show_text("\n".join(
+                    f"{name}  {old} -> {new}" for name, old, new in other)),
+                icon="package-x-generic",
+            ))
         layout.addStretch(1)
         self.add_page("Updates", page)
 
@@ -651,8 +1034,8 @@ class ControlCenter(NanoShell):
         fw = r["firmware"]
         self.info(layout, "Firmware",
                   fw["mode"] + (f" {fw['uefi_bits']}-bit" if fw.get("uefi_bits") else ""))
-        self.info(layout, "Secure Boot", r["secure_boot"].get("status") or "unknown")
-        self.info(layout, "Boot manager", ", ".join(r["boot_managers"]) or "Not detected")
+        self.info(layout, "Secure Boot", r["secure_boot"].get("status") or "unknown", icon="security-high")
+        self.info(layout, "Boot manager", ", ".join(r["boot_managers"]) or "Not detected", icon="system-run")
         repos = r["mirrors"]
         self.info(layout, "NanoOS repositories",
                   "Configured" if any(entry.get("nanoos") for entry in repos.values())
@@ -663,6 +1046,10 @@ class ControlCenter(NanoShell):
     # ------------------------------------------------------------ shutdown
     def shutdown(self):
         """Stop background work before Qt destroys the threads."""
+        self.live_timer.stop()
+        if self.nvidia_process is not None:
+            self.nvidia_process.kill()
+            self.nvidia_process.waitForFinished(1000)
         for worker in (self.worker, self.update_worker):
             if worker is not None and worker.isRunning():
                 if hasattr(worker, "stop"):
@@ -685,6 +1072,9 @@ def main():
     app.setDesktopFileName(DESKTOP_ID)
     app.setWindowIcon(QIcon.fromTheme("nanoos-control-center"))
     window = ControlCenter()
+    if "--page" in sys.argv[1:-1]:
+        window.requested_page = sys.argv[sys.argv.index("--page") + 1]
+        window.apply_start_page()
     app.aboutToQuit.connect(window.shutdown)
     window.show()
     return app.exec()
