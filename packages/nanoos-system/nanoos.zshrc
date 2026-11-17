@@ -42,7 +42,11 @@ RPROMPT=''
 [[ -f /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]] &&
     source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 
-# System info when a terminal opens
+# System info when a terminal opens (16-colour version on the Linux console)
 if [[ -o interactive && -t 1 ]] && command -v fastfetch >/dev/null; then
-    fastfetch
+    if [[ $TERM == linux && -f /usr/share/fastfetch/presets/nanoos-tty.jsonc ]]; then
+        fastfetch -c nanoos-tty
+    else
+        fastfetch
+    fi
 fi

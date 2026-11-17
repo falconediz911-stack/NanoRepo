@@ -131,6 +131,20 @@ _nanoos_performance() {
   done < /etc/passwd
 }
 
+# 10. Linux console: 16-colour fastfetch. Users whose ~/.zshrc is still the
+#     unchanged NanoOS 1.1 default get the new default (TTY-aware).
+_nanoos_zshrc_refresh() {
+  local new=/usr/share/nanoos-system/zshrc user home rc
+  [ -f /etc/skel/.zshrc ] && [ "$(sha256sum < /etc/skel/.zshrc | cut -d' ' -f1)" = "e808d08ad69e5b00cf567b371b16f5d85f8df878b57d0fc9c1116f7407c4adb9" ] &&
+    install -m644 "$new" /etc/skel/.zshrc
+  while IFS=: read -r user _ uid _ _ home _; do
+    [ "$uid" -ge 1000 ] && [ "$uid" -lt 60000 ] || continue
+    rc="$home/.zshrc"
+    [ -f "$rc" ] && [ "$(sha256sum < "$rc" | cut -d' ' -f1)" = "e808d08ad69e5b00cf567b371b16f5d85f8df878b57d0fc9c1116f7407c4adb9" ] || continue
+    install -m644 -o "$user" -g "$(id -gn "$user")" "$new" "$rc"
+  done < /etc/passwd
+}
+
 _nanoos_update() {
   _nanoos_identity
   _nanoos_windows_clock
@@ -141,6 +155,7 @@ _nanoos_update() {
   _nanoos_fastfetch
   _nanoos_grub_hook
   _nanoos_performance
+  _nanoos_zshrc_refresh
 }
 
 post_install() { _nanoos_update; }
