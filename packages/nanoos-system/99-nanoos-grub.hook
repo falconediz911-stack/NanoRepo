@@ -1,0 +1,16 @@
+# NanoOS: keep the GRUB boot menu in sync with installed kernels.
+# Named 99- so it runs after mkinitcpio has placed the kernel and
+# initramfs in /boot. Entries are titled after the NanoOS edition.
+
+[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Target = usr/lib/modules/*/vmlinuz
+
+[Action]
+Description = NanoOS: updating the GRUB boot menu...
+When = PostTransaction
+Depends = grub
+Exec = /bin/sh -c 'if [ ! -f /boot/grub/grub.cfg ]; then echo "GRUB menu not found; skipping."; elif command -v nanoos-grub-display >/dev/null; then nanoos-grub-display --update; else grub-mkconfig -o /boot/grub/grub.cfg; fi'

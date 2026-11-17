@@ -64,6 +64,32 @@ def boot_framebuffer():
     return (width, height) if width and height else None
 
 
+def edition_name():
+    try:
+        for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+            if line.startswith("NAME="):
+                return line.split("=", 1)[1].strip().strip('"') or "NanoOS"
+    except OSError:
+        pass
+    return "NanoOS"
+
+
+def regenerate(distributor):
+    """grub-mkconfig, then title entries "NanoOS Gaming" instead of GRUB's
+    hard-coded "<distributor> Linux"."""
+    result = subprocess.run(["grub-mkconfig", "-o", "/boot/grub/grub.cfg"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        return result.stderr.strip() or "grub-mkconfig failed"
+    cfg = Path("/boot/grub/grub.cfg")
+    text = cfg.read_text(encoding="utf-8", errors="replace")
+    fixed = re.sub(rf"(?m)^(\s*(?:menuentry|submenu) '(?:Advanced options for )?){re.escape(distributor)} Linux",
+                   rf"\g<1>{distributor}", text)
+    if fixed != text:
+        cfg.write_text(fixed, encoding="utf-8")
+    return None
+
+
 def grub_cfg_text():
     try:
         return Path("/boot/grub/grub.cfg").read_text(encoding="utf-8", errors="replace")
@@ -121,16 +147,30 @@ def set_default(text, key, value):
     return "\n".join(out) + "\n"
 
 
-def grub_cfg_matches(theme_file, gfxmode):
+def grub_cfg_matches(theme_file, gfxmode, distributor=None):
     try:
         cfg = Path("/boot/grub/grub.cfg").read_text(encoding="utf-8", errors="replace")
     except OSError:
         return False
     return (f"/boot/grub/themes/nanoos/{theme_file}\n" in cfg
-            and f"set gfxmode={gfxmode}" in cfg)
+            and f"set gfxmode={gfxmode}" in cfg
+            and (distributor is None or f"'{distributor} Linux" not in cfg))
 
 
 def main():
+    if "--update" in sys.argv:
+        if os.geteuid() != 0:
+            print("Run as root.", file=sys.stderr)
+            return 1
+        if not Path("/boot/grub/grub.cfg").is_file():
+            print("GRUB menu not found; skipping.")
+            return 0
+        error = regenerate(edition_name())
+        if error:
+            print(error, file=sys.stderr)
+            return 1
+        print(":: NanoOS: GRUB boot menu updated.")
+        return 0
     check = "--check" in sys.argv
     status_only = "--status" in sys.argv
     mode = monitor_mode()
@@ -184,14 +224,15 @@ def main():
     original = DEFAULTS.read_text(encoding="utf-8")
     updated = set_default(original, "GRUB_GFXMODE", gfxmode)
     updated = set_default(updated, "GRUB_THEME", str(THEME_DIR / theme_file))
+    distributor = edition_name()
+    updated = set_default(updated, "GRUB_DISTRIBUTOR", distributor)
     if updated != original:
         DEFAULTS.write_text(updated, encoding="utf-8")
     # Regenerate whenever grub.cfg does not already use the chosen theme/mode.
-    if not grub_cfg_matches(theme_file, gfxmode):
-        result = subprocess.run(["grub-mkconfig", "-o", "/boot/grub/grub.cfg"],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-        if result.returncode != 0 or not grub_cfg_matches(theme_file, gfxmode):
-            print(result.stderr.strip() or "grub.cfg was not updated", file=sys.stderr)
+    if not grub_cfg_matches(theme_file, gfxmode, distributor):
+        error = regenerate(distributor)
+        if error or not grub_cfg_matches(theme_file, gfxmode, distributor):
+            print(error or "grub.cfg was not updated", file=sys.stderr)
             return 1
     STATE.parent.mkdir(parents=True, exist_ok=True)
     STATE.write_text(signature)

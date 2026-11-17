@@ -100,6 +100,17 @@ _nanoos_fastfetch() {
   done
 }
 
+# 8. GRUB menu titled "NanoOS Gaming" (not "NanoOS Linux"): the packaged hook
+#    in /usr/share/libalpm/hooks replaces the copy older installers put in /etc.
+_nanoos_grub_hook() {
+  local old=/etc/pacman.d/hooks/99-nanoos-grub.hook
+  if [ -f "$old" ] && grep -q 'NanoOS: keep the GRUB boot menu' "$old" &&
+     ! pacman -Qqo "$old" >/dev/null 2>&1; then
+    rm -f "$old"
+  fi
+  [ -f /boot/grub/grub.cfg ] && /usr/bin/nanoos-grub-display --update >/dev/null 2>&1 || true
+}
+
 _nanoos_update() {
   _nanoos_identity
   _nanoos_windows_clock
@@ -108,6 +119,7 @@ _nanoos_update() {
   _nanoos_zsh
   _nanoos_grub_display
   _nanoos_fastfetch
+  _nanoos_grub_hook
 }
 
 post_install() { _nanoos_update; }
