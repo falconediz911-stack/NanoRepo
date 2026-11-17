@@ -32,8 +32,8 @@ alias grep='grep --color=auto'
 
 export PATH="$HOME/.local/bin:$PATH"
 
-# Prompt: [user@host dir]$
-PROMPT='%F{cyan}[%n@%m %~]%f$ '
+# Prompt: just $ (# as root), in NanoOS cyan
+PROMPT='%F{cyan}%(!.#.$)%f '
 RPROMPT=''
 
 # Autosuggestions, then syntax highlighting (must load last)

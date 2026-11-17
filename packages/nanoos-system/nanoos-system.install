@@ -135,14 +135,46 @@ _nanoos_performance() {
 #     unchanged NanoOS 1.1 default get the new default (TTY-aware).
 _nanoos_zshrc_refresh() {
   local new=/usr/share/nanoos-system/zshrc user home rc
-  [ -f /etc/skel/.zshrc ] && [ "$(sha256sum < /etc/skel/.zshrc | cut -d' ' -f1)" = "e808d08ad69e5b00cf567b371b16f5d85f8df878b57d0fc9c1116f7407c4adb9" ] &&
+  [ -f /etc/skel/.zshrc ] && case "$(sha256sum < /etc/skel/.zshrc | cut -d' ' -f1)" in e808d08ad69e5b00cf567b371b16f5d85f8df878b57d0fc9c1116f7407c4adb9|fe4f579b6472832cce49ed1152d6a750089eba5d9dd08de3be4140721b9a434e) true;; *) false;; esac &&
     install -m644 "$new" /etc/skel/.zshrc
   while IFS=: read -r user _ uid _ _ home _; do
     [ "$uid" -ge 1000 ] && [ "$uid" -lt 60000 ] || continue
     rc="$home/.zshrc"
-    [ -f "$rc" ] && [ "$(sha256sum < "$rc" | cut -d' ' -f1)" = "e808d08ad69e5b00cf567b371b16f5d85f8df878b57d0fc9c1116f7407c4adb9" ] || continue
+    [ -f "$rc" ] || continue
+    case "$(sha256sum < "$rc" | cut -d' ' -f1)" in e808d08ad69e5b00cf567b371b16f5d85f8df878b57d0fc9c1116f7407c4adb9|fe4f579b6472832cce49ed1152d6a750089eba5d9dd08de3be4140721b9a434e) ;; *) continue;; esac
     install -m644 -o "$user" -g "$(id -gn "$user")" "$new" "$rc"
   done < /etc/passwd
+}
+
+# 11. CPU Boost at boot: the unit was part of multi-user.target while ordered
+#     after power-profiles-daemon (which starts after multi-user.target), so
+#     systemd broke the cycle by dropping it and the saved mode never applied.
+_nanoos_cpu_boost_unit() {
+  local unit=/usr/lib/systemd/system/nanoos-cpu-boost.service
+  [ -f "$unit" ] && ! pacman -Qqo "$unit" >/dev/null 2>&1 || return
+  grep -q '^WantedBy=multi-user.target' "$unit" || return
+  local enabled=0
+  systemctl is-enabled -q nanoos-cpu-boost.service 2>/dev/null && enabled=1
+  sed -i 's/^WantedBy=multi-user.target$/WantedBy=graphical.target/' "$unit"
+  systemctl daemon-reload >/dev/null 2>&1
+  if [ "$enabled" = 1 ]; then
+    systemctl reenable nanoos-cpu-boost.service >/dev/null 2>&1
+    systemctl start --no-block nanoos-cpu-boost.service >/dev/null 2>&1 || true
+    echo ":: NanoOS: CPU Boost now applies at boot again."
+  fi
+}
+
+# 12. Login screen: SDDM on Wayland needs a compositor; its default (weston)
+#     is not installed, so it failed and fell back to X11 on every boot.
+_nanoos_sddm_compositor() {
+  local conf=/etc/sddm.conf.d/10-nanoos.conf
+  [ -f "$conf" ] && grep -q '^DisplayServer=wayland' "$conf" || return
+  grep -q '^CompositorCommand=' "$conf" && return
+  if command -v kwin_wayland >/dev/null; then
+    printf '\n[Wayland]\nCompositorCommand=kwin_wayland --drm --no-lockscreen --no-global-shortcuts --locale1\n' >> "$conf"
+  else
+    sed -i 's/^DisplayServer=wayland$/DisplayServer=x11/' "$conf"
+  fi
 }
 
 _nanoos_update() {
@@ -156,6 +188,8 @@ _nanoos_update() {
   _nanoos_grub_hook
   _nanoos_performance
   _nanoos_zshrc_refresh
+  _nanoos_cpu_boost_unit
+  _nanoos_sddm_compositor
 }
 
 post_install() { _nanoos_update; }
